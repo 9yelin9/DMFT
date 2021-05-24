@@ -37,7 +37,7 @@ int main() {
 
 	n_up = 0.5;
 
-	for(U=0; U<1; U+=1) {
+	for(U=0; U<10; U+=1) {
 		mu = U/2;
 		save_dispersion(U, m, 0);
 		
