@@ -18,7 +18,8 @@ void save_dispersion(double U, double m, int i) {
 
 	sprintf(fname, "data/U%.0f_%d.txt", U, i);
 	fp = fopen(fname, "w");
-	
+	fprintf(fp, "kx\tky\tenergy\n");
+
 	for(x=0; x<itv; x++) {
 		kx = -pi + (2*pi*x/(double)itv);
 		for(y=0; y<itv; y++) {
