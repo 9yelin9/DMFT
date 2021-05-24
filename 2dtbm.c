@@ -7,6 +7,7 @@
 
 #define pi 3.141592653689793
 #define energy_up(kx, ky, U, m) ((-2*(cos(kx)+cos(ky))) + (U*(0.5-m))) // spin-up energy
+#define energy_down(kx, ky, U, m) ((-2*(cos(kx)+cos(ky))) + (U*(0.5+m))) // spin-down energy
 
 int itv = 128; // interval
 
@@ -24,7 +25,7 @@ void save_dispersion(double U, double m, int i) {
 		kx = -pi + (2*pi*x/(double)itv);
 		for(y=0; y<itv; y++) {
 			ky = -pi + (2*pi*y/(double)itv);
-			fprintf(fp, "%f\t%f\t%f\n", kx, ky, energy_up(kx, ky, U, m));
+			fprintf(fp, "%f\t%f\t%f\t%f\n", kx, ky, energy_up(kx, ky, U, m), energy_down(kx, ky, U, m));
 		}
 	}
 
@@ -55,7 +56,6 @@ int main() {
 			}
 			n_up = (double)cnt/(itv*itv);
 		}
-		printf("%f\t%f\n", U, m);
 		save_dispersion(U, m, i);
 	}
 	
