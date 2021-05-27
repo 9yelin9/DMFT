@@ -67,7 +67,7 @@ int main() {
 			if(m == -0.5) break;
 		}
 		printf("%.1f\t%f\t%f\t%.1f\t%.3f\n", target_n, n, target_n-n, U, (clock()-time)*0.000001);
-		fprintf(fp, "%f\t%f\n", n, U);
+		fprintf(fp, "%f\t%f\n", n, 1.0/U);
 	}	
 
 	fclose(fp);
