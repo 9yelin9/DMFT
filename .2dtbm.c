@@ -56,6 +56,7 @@ int main() {
 			}
 			n_up = (double)cnt/(itv*itv);
 		}
+		printf("%f\t%f\n", U, m);
 		save_dispersion(U, m, i);
 	}
 	
