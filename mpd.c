@@ -46,7 +46,7 @@ double m_iter(double *n, double U, double mu) {
 	i = 0;
 	m = 0.1;
 
-	while(i < 1000) {
+	while(i != 128) {
 		ucnt = 0;
 		dcnt = 0;
 
@@ -79,11 +79,11 @@ int main() {
 	for(target_n=1; target_n>0.1; target_n-=0.1) {
 		time = clock();
 
-		for(U=0; U<10; U+=0.1) {
+		for(U=8; U<128; U+=0.1) {
 			mu = mu_iter(target_n, U, &n);
 			m = m_iter(&n, U, mu);
 
-			if(m > 0) break;
+			if(m == 0.5) break;
 		}
 		printf("%.1f\t%.3f\t%.3f\t%.1f\t%f\t%.3f\n", target_n, n, target_n-n, mu, 1/U, (clock()-time)*0.000001);
 		fprintf(fp, "%f\t%f\n", n, 1/U);
