@@ -40,13 +40,13 @@ double mu_iter(double target_n, double U, double *n) {
 }
 
 double m_iter(double *n, double U, double mu) {
-	int x, y, ucnt, dcnt;
-	double dm, m, kx, ky;
+	int i, x, y, ucnt, dcnt;
+	double m, kx, ky;
 
-	dm = 1;
+	i = 0;
 	m = 0.1;
 
-	while(dm != 0) {
+	while(i < 1000) {
 		ucnt = 0;
 		dcnt = 0;
 
@@ -59,8 +59,8 @@ double m_iter(double *n, double U, double mu) {
 				if(denergy(kx, ky, U, *n, m) < mu) dcnt++;
 			}
 		}
-		dm = m - 0.5 * ((double)ucnt/(itv*itv) - (double)dcnt/(itv*itv));
 		m = 0.5 * ((double)ucnt/(itv*itv) - (double)dcnt/(itv*itv));
+		i++;
 	}
 
 	return m;
@@ -76,10 +76,10 @@ int main() {
 
 	printf("target_n\tn\terror\tmu\tt/U\telapsed time(s)\n");
 	
-	for(target_n=0.1; target_n<1; target_n+=0.1) {
-		for(U=0; U<10; U+=0.1) {
-			time = clock();
+	for(target_n=1; target_n>0.1; target_n-=0.1) {
+		time = clock();
 
+		for(U=0; U<10; U+=0.1) {
 			mu = mu_iter(target_n, U, &n);
 			m = m_iter(&n, U, mu);
 
