@@ -6,69 +6,88 @@
 #include <time.h>
 
 #define pi 3.141592653689793
-#define energy_up(kx, ky, U, n, m) ((-2.0*(cos(kx)+cos(ky))) + (U*(n/2.0-m))) // spin-up energy
-#define energy_down(kx, ky, U, n, m) ((-2.0*(cos(kx)+cos(ky))) + (U*(n/2.0+m))) // spin-down energy
+#define uenergy(kx, ky, U, n, m) ((-2.0*(cos(kx)+cos(ky))) + (U*(n/2.0-m))) // spin-up energy
+#define denergy(kx, ky, U, n, m) ((-2.0*(cos(kx)+cos(ky))) + (U*(n/2.0+m))) // spin-down energy
 
 int itv = 128; // interval
+
+double mu_iter(double target_n, double U, double *n) {
+	int x, y, ucnt, dcnt;
+	double m, mu, kx, ky;
+
+	*n = 1;
+	m = 0;
+	mu = U/2;
+
+	while(target_n < *n) {
+		ucnt = 0;
+		dcnt = 0;
+
+		for(x=0; x<itv; x++) {
+			kx = -pi + (2*pi*x/(double)itv);
+			for(y=0; y<itv; y++) {
+				 ky = -pi + (2*pi*y/(double)itv);
+				
+				 if(uenergy(kx, ky, U, target_n, m) < mu) ucnt++;
+				 if(denergy(kx, ky, U, target_n, m) < mu) dcnt++;
+			}
+		}
+		*n = (double)ucnt/(itv*itv) + (double)dcnt/(itv*itv);
+		mu -= 0.001;
+	}
+
+	return mu;
+}
+
+double m_iter(double *n, double U, double mu) {
+	int x, y, ucnt, dcnt;
+	double dm, m, kx, ky;
+
+	dm = 1;
+	m = 0.1;
+
+	while(dm != 0) {
+		ucnt = 0;
+		dcnt = 0;
+
+		for(x=0; x<itv; x++) {
+			kx = -pi + (2*pi*x/(double)itv);
+			for(y=0; y<itv; y++) {
+				ky = -pi + (2*pi*y/(double)itv);
+
+				if(uenergy(kx, ky, U, *n, m) < mu) ucnt++;
+				if(denergy(kx, ky, U, *n, m) < mu) dcnt++;
+			}
+		}
+		dm = m - 0.5 * ((double)ucnt/(itv*itv) - (double)dcnt/(itv*itv));
+		m = 0.5 * ((double)ucnt/(itv*itv) - (double)dcnt/(itv*itv));
+	}
+
+	return m;
+}
 
 int main() {
 	FILE *fp;
 
-	int i, x, y, cnt;
-	double target_n, n, n_up, U, mu, m, dm, kx, ky, time;
+	double target_n, n, U, mu, m, time;
 
 	fp = fopen("data/mpd.txt", "w");
 	fprintf(fp, "n\tt/U\n");
 
-	printf("%s\t%s\t%s\t%s\t%s\n", "target_n", "n", "error", "transition", "elapsed time(s)");
-
-	for(target_n=1; target_n>0; target_n-=0.1) { // 목표 n값 설정
-		time = clock();
-		
+	printf("target_n\tn\terror\tmu\tt/U\telapsed time(s)\n");
+	
+	for(target_n=0.1; target_n<1; target_n+=0.1) {
 		for(U=0; U<10; U+=0.1) {
-			mu = U/2;
-			n = 1;
-			m = 0;
-			
-			// mu iteration
-			while(target_n < n) {
-				cnt = 0;
+			time = clock();
 
-				for(x=0; x<itv; x++) {
-					kx = -pi + (2*pi*x/(double)itv);
-					for(y=0; y<itv; y++) {
-						 ky = -pi + (2*pi*y/(double)itv);
-						
-						 if(energy_up(kx, ky, U, target_n, m) < mu) cnt++;
-					}
-				}
-				n = 2.0*(double)cnt/(itv*itv);
-				mu -= 0.001;
-			}
+			mu = mu_iter(target_n, U, &n);
+			m = m_iter(&n, U, mu);
 
-			// m iteration
-			dm = 1;
-
-			while(dm != 0) {
-				cnt = 0;
-
-				for(x=0; x<itv; x++) {
-					kx = -pi + (2*pi*x/(double)itv);
-					for(y=0; y<itv; y++) {
-						ky = -pi + (2*pi*y/(double)itv);
-
-						if(energy_up(kx, ky, U, n, m) < mu) cnt++;
-					}
-				}
-				dm = m - (2.0*(double)cnt/(itv*itv)-1)/2.0;
-				m = (2.0*(double)cnt/(itv*itv)-1)/2.0;
-			}
-
-			if(m == -0.5) break;
+			if(m > 0) break;
 		}
-		printf("%.1f\t%f\t%f\t%.1f\t%.3f\n", target_n, n, target_n-n, U, (clock()-time)*0.000001);
-		fprintf(fp, "%f\t%f\n", n, 1.0/U);
-	}	
+		printf("%.1f\t%.3f\t%.3f\t%.1f\t%f\t%.3f\n", target_n, n, target_n-n, mu, 1/U, (clock()-time)*0.000001);
+		fprintf(fp, "%f\t%f\n", n, 1/U);
+	}
 
 	fclose(fp);
 

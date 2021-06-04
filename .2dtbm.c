@@ -36,6 +36,8 @@ int main() {
 	int i, x, y, cnt;
 	double n_up, U, mu, m, kx, ky;
 
+	printf("U\tm\n");
+
 	n_up = 0.5;
 
 	for(U=0; U<10; U+=1) {
