@@ -18,5 +18,5 @@ echo "--------------------------------"
 
 ##source ~/.bashrc
 
+gcc -o mpd mpd.c -lm -O2
 ./mpd
-

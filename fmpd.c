@@ -74,18 +74,19 @@ int main() {
 	fp = fopen("data/mpd_test.txt", "w");
 	fprintf(fp, "n\tt/U\n");
 
-	printf("target_n\tn\terror\tmu\tt/U\telapsed time(s)\n");
+	printf("n\tt/U\telapsed time(s)\n");
 	
-	for(target_n=1; target_n>0.1; target_n-=0.1) {
+	for(target_n=0.3; target_n>0.1; target_n-=0.1) {
 		time = clock();
 
 		for(U=0; U<10; U+=0.1) {
 			mu = mu_iter(target_n, U, &n);
 			m = m_iter(&n, U, mu);
+			printf("%f\t%f\t%f\n", n, U, m);
 
-			if(m > 0) break;
+			if(fabs(m) > 1e-1) break;
 		}
-		printf("%.1f\t%.3f\t%.3f\t%.1f\t%f\t%.3f\n", target_n, n, target_n-n, mu, 1/U, (clock()-time)*0.000001);
+		printf("%.3f\t%f\t%.3f\n", n, 1/U, (clock()-time)*0.000001);
 		fprintf(fp, "%f\t%f\n", n, 1/U);
 	}
 
