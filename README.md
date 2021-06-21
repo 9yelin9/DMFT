@@ -1,2 +1,2 @@
-# DMFT
+# dmft
 dmft
