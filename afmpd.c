@@ -81,11 +81,10 @@ double DoubleMuCal(double target_n, double U) { // Double cell mu calculator
 
 		for(x=0; x<itv; x++) {
 			kx = -pi + (2*pi*x/(double)itv);
-			fprintf(fp, "%f\t", kx);
 
 			for(y=0; y<itv; y++) {
 				ky = -pi + (2*pi*y/(double)itv);
-				fprintf(fp, "%f\t", ky);
+				fprintf(fp, "%f\t%f\t", kx, ky);
 
 				EigenCal(w, v, kx, ky, U, target_n, n1_down, n2_down);
 				fprintf(fp, "%f\t%f\n", w[0], w[1]);
