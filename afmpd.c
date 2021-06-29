@@ -41,12 +41,12 @@ void EigenCal(double w[N], double v[LDVL*N], double kx, double ky, double U, dou
 	// Query and allocate the optimal workspace
 	// 독립 함수로 만들기
 	lwork = -1;
-	dgeev_("V", "V", &n, a, &lda, wr, wi, vl, &ldvl, vr, &ldvr, &wkopt, &lwork, &info);
+	LAPACK_dgeev("V", "V", &n, a, &lda, wr, wi, vl, &ldvl, vr, &ldvr, &wkopt, &lwork, &info);
 	lwork = (int)wkopt; // 이걸 얻는 함수
 	work = (double*)malloc(lwork*sizeof(double));
 
 	// Solve eigenproblem
-	dgeev_("V", "V", &n, a, &lda, wr, wi, vl, &ldvl, vr, &ldvr, work, &lwork, &info);
+	LAPACK_dgeev("V", "V", &n, a, &lda, wr, wi, vl, &ldvl, vr, &ldvr, work, &lwork, &info);
 
 	if(info > 0) {
 		printf("dgeev_ FAIL\n");
@@ -67,15 +67,17 @@ double DoubleMuCal(double target_n, double U) { // Double cell mu calculator
 
 	double w[N], v[LDVR*N];
 	
+	/*
 	FILE *fp;
 	fp = fopen("data/afmpd_energy.txt", "w");
 	fprintf(fp, "kx\tky\teigenvalue1\teigenvalue2\n");
+	*/
 
 	n1_up = n2_up = 1;
 	n1_down = n2_down = target_n/4;
 	mu = U/2;
 
-	//while(target_n < n1_up*4) {
+	while(target_n < n1_up*4) {
 		sum1 = 0;
 		sum2 = 0;
 
@@ -84,28 +86,24 @@ double DoubleMuCal(double target_n, double U) { // Double cell mu calculator
 
 			for(y=0; y<itv; y++) {
 				ky = -pi + (2*pi*y/(double)itv);
-				fprintf(fp, "%f\t%f\t", kx, ky);
 
 				EigenCal(w, v, kx, ky, U, target_n, n1_down, n2_down);
-				fprintf(fp, "%f\t%f\n", w[0], w[1]);
-				printf("%f\t%f\n", w[0], w[1]);
+				//fprintf(fp, "%f\t%f\t%f\t%f\n", kx, ky, w[0], w[1]);
 
-				/*
 				for(i=0; i<N; i++) {
 					if(w[i] - EU(U, target_n, n1_up, n1_down, n2_up, n2_down) < mu) {
 						for(j=0; j<LDVR*N; j+=LDVR) sum1 += pow(v[j], 2);
 						for(j=1; j<LDVR*N; j+=LDVR) sum2 += pow(v[j], 2);
 					}
 				}
-				*/
 			}
 		}
 		n1_up = sum1/(itv*itv);
 		n2_up = sum2/(itv*itv);
 		mu -= 0.01;
-	//}
+	}
 
-	fclose(fp);
+	//fclose(fp);
 
 	return mu;
 }
@@ -120,7 +118,7 @@ double DoubleMCal(double target_n, double U, double mu) { // Double cell m calcu
 	n1_down = 0.1;
 	n2_down = 0.3;
 
-	for(k=0; k<128; k++) {
+	for(k=0; k<10; k++) {
 		sum1 = 0;
 		sum2 = 0;
 
@@ -146,6 +144,7 @@ double DoubleMCal(double target_n, double U, double mu) { // Double cell m calcu
 		n2_down = target_n/2 - n2_up;
 
 		m = ((n1_up+n2_up) - (n1_down+n2_down))/4;
+		printf("%f\t%f\t%f\n", target_n, U, m);
 	}
 
 	return m;
@@ -162,12 +161,12 @@ int main() {
 
 	//printf("target_n\tt/U\telapsed time(s)\n");
 	
-	for(target_n=1.0; target_n>0.9; target_n-=0.1) {
+	for(target_n=1.0; target_n>0.1; target_n-=0.1) {
 		//time = clock();
 
-		for(U=0; U<1; U+=1) {
+		for(U=0; U<10; U+=1) {
 			mu = DoubleMuCal(target_n, U);
-			//m = DoubleMCal(target_n, U, mu);
+			m = DoubleMCal(target_n, U, mu);
 			//printf("%f\t%f\t%f\n", target_n, U, m);
 
 			//if(fabs(m) > 1e-1) break;
