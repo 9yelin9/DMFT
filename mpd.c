@@ -7,20 +7,20 @@
 
 #define pi 3.141592653689793
 #define TBE(kx, ky) (-2.0*(cos(kx)+cos(ky))) // Tight-binding energy
-#define SUE(kx, ky, U, n, m) (TBE(kx, ky) + (U*(n/2.0-m))) // Single cell spin-up energy eigenvalue
-#define SDE(kx, ky, U, n, m) (TBE(kx, ky) + (U*(n/2.0+m))) // Single cell spin-down energy eigenvalue
+#define SUE(kx, ky, u, n, m) (TBE(kx, ky) + (u*(n/2.0-m))) // Single cell spin-up energy eigenvalue
+#define SDE(kx, ky, u, n, m) (TBE(kx, ky) + (u*(n/2.0+m))) // Single cell spin-down energy eigenvalue
 
 int itv = 128; // interval
 
-double SingleMuCal(double target_n, double U) { // Single cell mu calculator
+double SingleMuCal(double *n, double u, double n_target) { // Single cell mu calculator
 	int x, y, up_cnt, down_cnt;
-	double n, m, mu, kx, ky;
+	double m, mu, kx, ky;
 
-	n = 1;
+	*n = 1;
 	m = 0;
-	mu = U/2;
+	mu = u/2;
 
-	while(target_n < n) {
+	while(*n < n_target) {
 		up_cnt = 0;
 		down_cnt = 0;
 
@@ -29,24 +29,24 @@ double SingleMuCal(double target_n, double U) { // Single cell mu calculator
 			for(y=0; y<itv; y++) {
 				 ky = -pi + (2*pi*y/(double)itv);
 				
-				 if(SUE(kx, ky, U, target_n, m) < mu) up_cnt++;
-				 if(SDE(kx, ky, U, target_n, m) < mu) down_cnt++; 
+				 if(SUE(kx, ky, u, n_target, m) < mu) up_cnt++;
+				 if(SDE(kx, ky, u, n_target, m) < mu) down_cnt++; 
 			}
 		}
-		n = (double)up_cnt/(itv*itv) + (double)down_cnt/(itv*itv);
+		*n = (double)up_cnt/(itv*itv) + (double)down_cnt/(itv*itv);
 		mu -= 0.001;
 	}
 
 	return mu;
 }
 
-double SingleMCal(double target_n, double U, double mu) { // Single cell m calculator
+double SingleMCal(double n, double u, double mu) { // Single cell m calculator
 	int i, x, y, up_cnt, down_cnt;
 	double m, kx, ky;
 
 	m = 0.1;
 
-	for(i=0; i<128; i++) {
+	for(i=0; i<32; i++) {
 		up_cnt = 0;
 		down_cnt = 0;
 
@@ -55,8 +55,8 @@ double SingleMCal(double target_n, double U, double mu) { // Single cell m calcu
 			for(y=0; y<itv; y++) {
 				ky = -pi + (2*pi*y/(double)itv);
 
-				if(SUE(kx, ky, U, target_n, m) < mu) up_cnt++;
-				if(SDE(kx, ky, U, target_n, m) < mu) down_cnt++;
+				if(SUE(kx, ky, u, n, m) < mu) up_cnt++;
+				if(SDE(kx, ky, u, n, m) < mu) down_cnt++;
 			}
 		}
 		m = ((double)up_cnt/(itv*itv) - (double)down_cnt/(itv*itv))/2;
@@ -66,29 +66,30 @@ double SingleMCal(double target_n, double U, double mu) { // Single cell m calcu
 }
 
 int main() {
-	FILE *fp;
+	double n_target, n, u, u_old, mu, m, time;
 
-	double target_n, U, mu, m, time;
+	//FILE *fp;
+	//fp = fopen("data/mpd.txt", "w");
+	//fprintf(fp, "n\tt/u\n");
+	printf("n\tt/u\telapsed time(s)\n");
 
-	fp = fopen("data/mpd.txt", "w");
-	fprintf(fp, "target_n\tt/U\n");
-
-	printf("target_n\tt/U\telapsed time(s)\n");
+	u_old = 1;
 	
-	for(target_n=1.0; target_n>0.1; target_n-=0.1) {
+	for(n_target=1.0; n_target>0.1; n_target-=0.1) {
 		time = clock();
 
-		for(U=0; U<10; U+=0.1) {
-			mu = SingleMuCal(target_n, U);
-			m = SingleMCal(target_n, U, mu);
+		for(u=u_old; u<100; u+=0.1) {
+			mu = SingleMuCal(&n, u, n_target);
+			m = SingleMCal(n, u, mu);
 
 			if(fabs(m) > 1e-1) break;
 		}
-		printf("%.1f\t%f\t%.3f\n", target_n, 1/U, (clock()-time)*0.000001);
-		fprintf(fp, "%f\t%f\n", target_n, 1/U);
+		u_old = u;
+		printf("%.1f\t%f\t%.3f\n", n, 1/u, (clock()-time)*0.000001);
+		//fprintf(fp, "%f\t%f\n", n, 1/u);
 	}
 
-	fclose(fp);
+	//fclose(fp);
 
 	return 0;
 }

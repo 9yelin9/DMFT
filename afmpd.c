@@ -6,176 +6,237 @@
 #include <time.h>
 #include <lapack.h>
 
-#define pi 3.141592653689793
-#define EU(U, target_n, n1_up, n1_down, n2_up, n2_down) (U*target_n*(n1_up*n1_down + n2_up*n2_down))
+#define _USE_MATH_DEFINES
 
-// dgeev_ parameters
-#define N 2 // The order of the matrix
-#define LDA N // The leading dimensionof the array A
-#define LDVL N // The leading dimension of the array VL(left eigenvectors)
-#define LDVR N // The leading dimension of the array VR(right eigenvectors)
+#define LN 2
+#define LDA LN
+#define LDVL LN
+#define LDVR LN
 
-int itv = 128; // interval
+#define EU(u, n, u1, u2, d1, d2) (u*n*(u1*d1 + u2*d2))
 
-// 변수를 구조체로 만들어보기 (종류별로)
-void EigenCal(double w[N], double v[LDVL*N], double kx, double ky, double U, double target_n, double n1_down, double n2_down) { // Eigenvalue, eigenvector calculator
-	/*
-	   a[0]=U<n1_down>	a[2]=tr
-	   a[1]=tr*			a[3]=U<n2_down>
-	*/
-	int n = N, lda = LDA, ldvl = LDVL, ldvr = LDVR;
-	int info; // = 0 : successful exit
-	int lwork; // The dimension of the array WORK
-	double wkopt; // WORK optimal
-	double *work;
+const int itv = 128; // interval
+lapack_int lwork = 1;
 
-	double a[LDA*N];
-	double wr[N], wi[N]; // eigenvalues(WR : real parts, WI : imaginary parts)
-	double vl[LDVL*N], vr[LDVR*N]; // eigenvectors(VL : left eigenvectors, VR : right eigenvectors)
-	
-	a[0] = U*n1_down;
-	a[1] = 2.0*(cos((kx+ky)/2)+cos((ky-kx)/2));
-	a[2] = 2.0*(cos((kx+ky)/2)+cos((ky-kx)/2));
-	a[3] = U*n2_down;
+typedef struct _HubbardModel{
+	double n;
+	double mu;
+	double u1;
+	double u2;
+	double d1;
+	double d2;
+	double m;
+	double m1;
+	double m2;
+	lapack_complex_double w[LN];
+	lapack_complex_double v[LDVR*LN];
+} _HM;
 
-	// Query and allocate the optimal workspace
-	// 독립 함수로 만들기
+void EigenCalOpt() { // EigenCal optimizer
+	lapack_int ln = LN, lda = LDA, ldvl = LDVL, ldvr = LDVR, info;
+	lapack_complex_double wkopt;
+	double rwork[2*LN];
+
+	lapack_complex_double a[LDA*LN] = {
+		1+1*I, 1+1*I,
+		1+1*I, 1+1*I
+	};
+
 	lwork = -1;
-	LAPACK_dgeev("V", "V", &n, a, &lda, wr, wi, vl, &ldvl, vr, &ldvr, &wkopt, &lwork, &info);
-	lwork = (int)wkopt; // 이걸 얻는 함수
-	work = (double*)malloc(lwork*sizeof(double));
+	LAPACK_zgeev("N", "V", &ln, a, &lda, 0, 0, &ldvl, 0, &ldvr, &wkopt, &lwork, rwork, &info);
+	lwork = (int)creal(wkopt);
+}
 
-	// Solve eigenproblem
-	LAPACK_dgeev("V", "V", &n, a, &lda, wr, wi, vl, &ldvl, vr, &ldvr, work, &lwork, &info);
+void UEigenCal(_HM *hm, double u, double kx, double ky) { // Spin-up eigenproblem calculator
+	lapack_int ln = LN, lda = LDA, ldvl = LDVL, ldvr = LDVR, info;
+	lapack_complex_double *vl, *work;
+	double rwork[2*LN];
+	double a0real, a1real, a2real, a1imag, a2imag, a3real;
+
+	a0real = u*(hm->d1 - hm->m1);
+	a1real = a2real = -1-cos(-kx-ky)-cos(-kx)-cos(-ky);
+	a1imag = +sin(-kx-ky)+sin(-kx)+sin(-ky);
+	a2imag = -sin(-kx-ky)-sin(-kx)-sin(-ky);
+	a3real = u*(hm->d2 - hm->m2);
+
+	lapack_complex_double a[LDA*LN] = {
+		a0real+0*I, a1real+a1imag*I,
+		a2real+a2imag*I, a3real+0*I
+	};
+
+	vl = (lapack_complex_double*)malloc((LDVL*LN)*sizeof(lapack_complex_double));
+	work = (lapack_complex_double*)malloc(lwork*sizeof(lapack_complex_double));
+
+	LAPACK_zgeev("N", "V", &ln, a, &lda, hm->w, vl, &ldvl, hm->v, &ldvr, work, &lwork, rwork, &info);
 
 	if(info > 0) {
-		printf("dgeev_ FAIL\n");
+		printf("LAPACK_zgeev FAIL\n");
 		exit(1);
 	}
-	
-	int i;
-	for(i=0; i<N; i++) w[i] = wr[i];
-	for(i=0; i<LDVR*N; i++) v[i] = vr[i];
-	// 반복을 줄이면 좋다
 
+	free(vl);
 	free(work);
 }
 
-double DoubleMuCal(double target_n, double U) { // Double cell mu calculator
-	int i, j, x, y;
-	double n1_up, n2_up, n1_down, n2_down, mu, kx, ky, sum1, sum2;
+void DEigenCal(_HM *hm, double u, double kx, double ky) { // Spin-down eigenproblem calculator
+	lapack_int ln = LN, lda = LDA, ldvl = LDVL, ldvr = LDVR, info;
+	lapack_complex_double *vl, *work;
+	double rwork[2*LN];
+	double a0real, a1real, a2real, a1imag, a2imag, a3real;
 
-	double w[N], v[LDVR*N];
-	
-	/*
-	FILE *fp;
-	fp = fopen("data/afmpd_energy.txt", "w");
-	fprintf(fp, "kx\tky\teigenvalue1\teigenvalue2\n");
-	*/
+	a0real = u*(hm->u1 + hm->m1);
+	a1real = a2real = -1-cos(-kx-ky)-cos(-kx)-cos(-ky);
+	a1imag = +sin(-kx-ky)+sin(-kx)+sin(-ky);
+	a2imag = -sin(-kx-ky)-sin(-kx)-sin(-ky);
+	a3real = u*(hm->u2 + hm->m2);
 
-	n1_up = n2_up = 1;
-	n1_down = n2_down = target_n/4;
-	mu = U/2;
+	lapack_complex_double a[LDA*LN] = {
+		a0real+0*I, a1real+a1imag*I,
+		a2real+a2imag*I, a3real+0*I
+	};
 
-	while(target_n < n1_up*4) {
-		sum1 = 0;
-		sum2 = 0;
+	vl = (lapack_complex_double*)malloc((LDVL*LN)*sizeof(lapack_complex_double));
+	work = (lapack_complex_double*)malloc(lwork*sizeof(lapack_complex_double));
 
-		for(x=0; x<itv; x++) {
-			kx = -pi + (2*pi*x/(double)itv);
+	LAPACK_zgeev("N", "V", &ln, a, &lda, hm->w, vl, &ldvl, hm->v, &ldvr, work, &lwork, rwork, &info);
 
-			for(y=0; y<itv; y++) {
-				ky = -pi + (2*pi*y/(double)itv);
-
-				EigenCal(w, v, kx, ky, U, target_n, n1_down, n2_down);
-				//fprintf(fp, "%f\t%f\t%f\t%f\n", kx, ky, w[0], w[1]);
-
-				for(i=0; i<N; i++) {
-					if(w[i] - EU(U, target_n, n1_up, n1_down, n2_up, n2_down) < mu) {
-						for(j=0; j<LDVR*N; j+=LDVR) sum1 += pow(v[j], 2);
-						for(j=1; j<LDVR*N; j+=LDVR) sum2 += pow(v[j], 2);
-					}
-				}
-			}
-		}
-		n1_up = sum1/(itv*itv);
-		n2_up = sum2/(itv*itv);
-		mu -= 0.01;
+	if(info > 0) {
+		printf("LAPACK_zgeev FAIL\n");
+		exit(1);
 	}
 
-	//fclose(fp);
-
-	return mu;
+	free(vl);
+	free(work);
 }
 
-double DoubleMCal(double target_n, double U, double mu) { // Double cell m calculator
-	int i, j, k, x, y;
-	double n1_up, n2_up, n1_down, n2_down, kx, ky, sum1, sum2, m;
+void DoubleMuCal(_HM *hm, double u, double n_target) { // Double cell mu calculator
+	int i, x, y;
+	double kx, ky, u1_sum, u2_sum, d1_sum, d2_sum;
 
-	double w[N], v[LDVR*N];
+	hm->n = 1.1;
+	hm->mu = u/2;
+	hm->m1 = hm->m2 = 0;
+	hm->u1 = hm->u2 = hm->d1 = hm->d2 = 1;
 
-	n1_up = n2_up = 1;	
-	n1_down = 0.1;
-	n2_down = 0.3;
-
-	for(k=0; k<10; k++) {
-		sum1 = 0;
-		sum2 = 0;
+	while(hm->n > n_target) {
+		u1_sum = 0;
+		u2_sum = 0;
+		d1_sum = 0;
+		d2_sum = 0;
 
 		for(x=0; x<itv; x++) {
-			kx = -pi + (2*pi*x/(double)itv);
+			kx = -M_PI+ (2*M_PI*x/(double)itv);
 			for(y=0; y<itv; y++) {
-				ky = -pi + (2*pi*y/(double)itv);
+				ky = -M_PI+ (2*M_PI*y/(double)itv);
 
-				EigenCal(w, v, kx, ky, U, target_n, n1_down, n2_down);
-
-				for(i=0; i<N; i++) {
-					if(w[i] - EU(U, target_n, n1_up, n1_down, n2_up, n2_down) < mu) {
-						for(j=0; j<LDVR*N; j+=LDVR) sum1 += pow(v[j], 2);
-						for(j=1; j<LDVR*N; j+=LDVR) sum2 += pow(v[j], 2);
+				UEigenCal(hm, u, kx, ky);
+				for(i=0; i<LN; i++) {
+					if(creal(hm->w[i]) - EU(u, hm->n, hm->u1, hm->u2, hm->d1, hm->d2) < hm->mu) {
+						u1_sum += pow(creal(hm->v[2*i]), 2) + pow(cimag(hm->v[2*i]), 2);
+						u2_sum += pow(creal(hm->v[2*i+1]), 2) + pow(cimag(hm->v[2*i+1]), 2);
+					}
+				}
+				DEigenCal(hm, u, kx, ky);
+				for(i=0; i<LN; i++) {
+					if(creal(hm->w[i]) - EU(u, hm->n, hm->u1, hm->u2, hm->d1, hm->d2) < hm->mu) {
+						d1_sum += pow(creal(hm->v[2*i]), 2) + pow(cimag(hm->v[2*i]), 2);
+						d2_sum += pow(creal(hm->v[2*i+1]), 2) + pow(cimag(hm->v[2*i+1]), 2);
 					}
 				}
 			}
 		}
-		n1_up = sum1/(itv*itv);
-		n1_down = target_n/2 - n1_up;
+		hm->n = (u1_sum + u2_sum + d1_sum + d2_sum)/(itv*itv);	
+		hm->u1 = u1_sum/(hm->n*itv*itv);
+		hm->u2 = u2_sum/(hm->n*itv*itv);
+		hm->d1 = d1_sum/(hm->n*itv*itv);
+		hm->d2 = d2_sum/(hm->n*itv*itv);
+		
+		//printf("%.1f\t%.1f\t%f\t%f\t%f\t%f\n", n_target, u, hm->u1, hm->u2, hm->d1, hm->d2);
+		//printf("%.1f\t%.1f\t%f\n", n_target, u, hm->n);
 
-		n2_up = sum2/(itv*itv);
-		n2_down = target_n/2 - n2_up;
-
-		m = ((n1_up+n2_up) - (n1_down+n2_down))/4;
-		printf("%f\t%f\t%f\n", target_n, U, m);
+		hm->mu -= 0.01;
 	}
+	//printf("\n");
+}
 
-	return m;
+void DoubleMCal(_HM *hm, double u) { // Double cell m calculator
+	int itr, i, x, y;
+	double kx, ky, u1_sum, d1_sum, u2_sum, d2_sum; 
+
+	hm->m1 = 0.1;
+	hm->m2 = 0.1;
+
+	for(itr=0; itr<32; itr++) {
+		u1_sum = 0;
+		u2_sum = 0;
+		d1_sum = 0;
+		d2_sum = 0;
+
+		for(x=0; x<itv; x++) {
+			kx = -M_PI+ (2*M_PI*x/(double)itv);
+			for(y=0; y<itv; y++) {
+				ky = -M_PI+ (2*M_PI*y/(double)itv);
+
+				UEigenCal(hm, u, kx, ky);
+				for(i=0; i<LN; i++) {
+					if(creal(hm->w[i]) - EU(u, hm->n, hm->u1, hm->u2, hm->d1, hm->d2) < hm->mu) {
+						u1_sum += pow(creal(hm->v[2*i]), 2) + pow(cimag(hm->v[2*i]), 2);
+						u2_sum += pow(creal(hm->v[2*i+1]), 2) + pow(cimag(hm->v[2*i+1]), 2);
+					}
+				}
+				DEigenCal(hm, u, kx, ky);
+				for(i=0; i<LN; i++) {
+					if(creal(hm->w[i]) - EU(u, hm->n, hm->u1, hm->u2, hm->d1, hm->d2) < hm->mu) {
+						d1_sum += pow(creal(hm->v[2*i]), 2) + pow(cimag(hm->v[2*i]), 2);
+						d2_sum += pow(creal(hm->v[2*i+1]), 2) + pow(cimag(hm->v[2*i+1]), 2);
+					}
+				}
+			}
+		}
+		hm->u1 = u1_sum/(hm->n*itv*itv);
+		hm->u2 = u2_sum/(hm->n*itv*itv);
+		hm->d1 = d1_sum/(hm->n*itv*itv);
+		hm->d2 = d2_sum/(hm->n*itv*itv);
+
+		hm->m1 = (hm->u1 - hm->d1)/2;
+		hm->m2 = (hm->u2 - hm->d2)/2;
+		hm->m = hm->m1 + hm->m2;
+		
+		//printf("%.1f\t%f\t%f\n", u, hm->n, hm->u1+hm->u2+hm->d1+hm->d2); 
+		printf("%.3f\t%.1f\t%f\t%f\t%f\t%f\n", hm->n, u, hm->u1, hm->u2, hm->d1, hm->d2); 
+		//printf("%.3f\t%.1f\t%f\t%f\t%f\n", hm->n, u, hm->m1, hm->m2, hm->m);
+	}
+	printf("\n");
 }
 
 int main() {
-	FILE *fp;
+	double n_target, u, u_old;
+	double time;
 
-	double target_n, U, mu, m;
-	//double time;
+	//FILE *fp;
+	//fp = fopen("data/afmpd.txt", "w");
+	//fprintf(fp, "n\tt/u\n");
+	//printf("n\tt/u\telapsed time(s)\n");
 
-	fp = fopen("data/afmpd.txt", "w");
-	fprintf(fp, "target_n\tt/U\n");
+	_HM *hm = malloc(sizeof(_HM));
+	EigenCalOpt();
+	u_old = 1;
 
-	//printf("target_n\tt/U\telapsed time(s)\n");
-	
-	for(target_n=1.0; target_n>0.1; target_n-=0.1) {
-		//time = clock();
+	for(n_target=1.0; n_target>0.1; n_target-=0.1) {
+		time = clock();
 
-		for(U=0; U<10; U+=1) {
-			mu = DoubleMuCal(target_n, U);
-			m = DoubleMCal(target_n, U, mu);
-			//printf("%f\t%f\t%f\n", target_n, U, m);
+		for(u=u_old; u<100; u+=1) {
+			DoubleMuCal(hm, u, n_target);
+			DoubleMCal(hm, u);
 
-			//if(fabs(m) > 1e-1) break;
+			if(fabs(hm->m) > 1e-1) break;
 		}
-		//printf("%.3f\t%f\t%.3f\n", target_n, 1/U, (clock()-time)*0.000001);
-		//fprintf(fp, "%f\t%f\n", target_n, 1/U);
+		u_old = u;
+		//printf("%.3f\t%f\t%.3f\n", hm->n, 1/u, (clock()-time)*0.000001);
+		//fprintf(fp, "%f\t%f\n", hm->n, 1/u);
 	}
 
-	fclose(fp);
+	//fclose(fp);
 
 	return 0;
 }

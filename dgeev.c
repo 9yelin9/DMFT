@@ -80,19 +80,22 @@ extern void print_eigenvectors( char* desc, int n, double* wi, double* v,
       int ldv );
 
 /* Parameters */
-#define N 5
-#define LDA N
-#define LDVL N
-#define LDVR N
+#define N 5 // The order of the matrix
+#define LDA N // The leading dimension of the array A
+#define LDVL N // The leading dimension of the array VL(left eigenvectors)
+#define LDVR N // The leading dimension of the array VR(right eigenvectors)
 
 /* Main program */
 int main() {
         /* Locals */
-        int n = N, lda = LDA, ldvl = LDVL, ldvr = LDVR, info, lwork;
-        double wkopt;
+        int n = N, lda = LDA, ldvl = LDVL, ldvr = LDVR;
+		int info; // = 0 : successful exit
+		int lwork; // The dimension of the array WORK
+        double wkopt; // WORK optimal
         double* work;
         /* Local arrays */
-        double wr[N], wi[N], vl[LDVL*N], vr[LDVR*N];
+        double wr[N], wi[N]; // eigenvalues(WR : real parts, WI : imaginary parts)
+		double vl[LDVL*N], vr[LDVR*N]; // eigenvectors(VL : left eigenvectors, VR : right eigenvectors)
         double a[LDA*N] = {
            -1.01,  3.98,  3.30,  4.43,  7.31,
             0.86,  0.53,  8.26,  4.96, -6.43,
