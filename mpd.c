@@ -16,11 +16,11 @@ double SingleMuCal(double *n, double u, double n_target) { // Single cell mu cal
 	int x, y, up_cnt, down_cnt;
 	double m, mu, kx, ky;
 
-	*n = 1;
+	*n = 1.1;
 	m = 0;
 	mu = u/2;
 
-	while(*n < n_target) {
+	while(*n > n_target) {
 		up_cnt = 0;
 		down_cnt = 0;
 
