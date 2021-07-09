@@ -16,6 +16,7 @@
 #define EU(u, n, m) (u*n*2*(pow(n/4, 2) - pow(m, 2)))
 
 const int itv = 128; // interval
+double tol = 1e-1; // tolerance
 lapack_int lwork = 1;
 
 typedef struct _HubbardModel{
@@ -101,7 +102,6 @@ void DoubleMuCal(_HM *hm, double u, double mu_old, double n_target) { // Double 
 		}
 		n = 2*(u1_sum + u2_sum)/(itv*itv);
 		hm->mu += 0.01;
-		//printf("%f\t%.1f\t%f\t%f\n", n, u, hm->mu, hm->m);
 	}
 	hm->n = n;
 }
@@ -131,16 +131,48 @@ void DoubleMCal(_HM *hm, double u) { // Double cell m calculator
 			}
 		}
 		hm->m = (u1_sum - u2_sum)/(2*itv*itv);
-		//printf("%f\t%.1f\t%f\n", hm->n, u, hm->m);
 	}
 }
 
-void EnergyCal(double n_target) { // Energy calculator
-	int i, p;
-	double k1, k2, u, mu_old;
-
+void TolCal() { // Tolerance calculator
 	FILE *fp;
 	char buf[128];
+
+	double n_target, u, u_old, mu_old;
+	
+	_HM *hm = malloc(sizeof(_HM));
+	EigenCalOpt();
+	u_old = 1;
+
+	for(n_target=2.0; n_target>1.1; n_target-=0.2) {
+		sprintf(buf, "data/afmm_n%.1f.txt", n_target);
+		fp = fopen(buf, "w");
+		fprintf(fp, "u\tm\n");
+		printf("%.1f\n", n_target);
+
+		mu_old = -(u_old+1);
+
+		for(u=u_old; u<10; u+=0.1) {
+			DoubleMuCal(hm, u, mu_old, n_target);
+			DoubleMCal(hm, u);
+			mu_old = hm->mu - 0.5;
+			fprintf(fp, "%f\t%f\n", u, hm->m);
+			printf("%f\t%f\n", u, hm->m);
+
+			if(fabs(hm->m) > tol) break;
+		}
+		u_old = u;
+		fclose(fp);
+		printf("\n");
+	}
+}
+
+void EnergyPrt(double n_target) { // Energy printor
+	FILE *fp;
+	char buf[128];
+
+	int i, p;
+	double k1, k2, u, mu_old;
 
 	_HM *hm = malloc(sizeof(_HM));
 	EigenCalOpt();
@@ -184,37 +216,28 @@ void EnergyCal(double n_target) { // Energy calculator
 			fprintf(fp, "%d\t%f\t%f\t%f\n", p, creal(hm->w[0]), creal(hm->w[1]), hm->mu);
 			p++;
 		}
-
 		fclose(fp);
-		
-		mu_old = hm->mu - 0.5;
-		if(fabs(hm->m) > 1.2e-1) break;
-	}
 
-	printf("Complete EnergyCal\n");
+		mu_old = hm->mu - 0.5;
+		if(fabs(hm->m) > tol) break;
+	}
+	printf("Complete EnergyPrt\n");
 }
 
+void AFMPDPrt() { // AFMPD printor
+	FILE *fp;
+	fp = fopen("data/afmpd.txt", "w");
+	fprintf(fp, "n/2\tt/u\n");
+	printf("n/2\tt/u\telapsed time(s)\n");
 
-int main() {
 	double n_target, u, u_old, mu_old;
 	double time;
-
+	
 	_HM *hm = malloc(sizeof(_HM));
 	EigenCalOpt();
 	u_old = 1;
 
-	// Band structure
-	//EnergyCal(2);
-
-	// 
-
-	// AFM/PM Transition
-	//FILE *fp;
-	//fp = fopen("data/afmpd.txt", "w");
-	//fprintf(fp, "n/2\tt/u\n");
-	//printf("n/2\tt/u\telapsed time(s)\n");
-
-	for(n_target=2; n_target>1.0; n_target-=0.2) {
+	for(n_target=2.0; n_target>1.1; n_target-=0.2) {
 		time = clock();
 		mu_old = -(u_old+1);
 
@@ -223,14 +246,24 @@ int main() {
 			DoubleMCal(hm, u);
 			mu_old = hm->mu - 0.5;
 
-			if(fabs(hm->m) > 1.2e-1) break;
+			if(fabs(hm->m) > tol) break;
 		}
 		u_old = u;
 		printf("%.3f\t%f\t%.3f\n", hm->n/2, 1/u, (clock()-time)*0.000001);
-		//fprintf(fp, "%f\t%f\n", hm->n/2, 1/u);
+		fprintf(fp, "%f\t%f\n", hm->n/2, 1/u);
 	}
+	fclose(fp);
+}
 
-	//fclose(fp);
+int main() {
+	// Calculate tolerance
+	//TolCal();	
+
+	// Band structure
+	//EnergyPrt(2);
+
+	// AFM/PM Transition
+	AFMPDPrt();
 
 	return 0;
 }
