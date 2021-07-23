@@ -1,0 +1,19 @@
+/home/9yelin9/.bash_profile: line 2: .bashrc: No such file or directory
+/home/9yelin9/.bash_profile: line 3: dmft: command not found
+nodes list
+/home/9yelin9/mpd
+--------------------------------
+jobid:       
+nodes:       
+cores:       
+Nodefile:    
+# time-start 2021. 07. 22. (목) 16:33:15 KST
+--------------------------------
+-5.980936	-1.760000
+-5.708933	-1.640000
+-5.520138	-1.784511
+-5.362221	-2.197722
+-5.248245	-2.718461
+-5.155005	-3.286375
+-5.085186	-3.902019
+FMAFMGraph is done!

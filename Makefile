@@ -1,24 +1,28 @@
 CC = gcc
-
-RM = rm -f
+RM = rm -rf
 LAPACK_DIR = /opt/libflame/gcc-7.5.0/2.2/
-
-LDFLAGS = -mcmodel=medium -L${LAPACK_DIR}/lib -llapack -lm
-CFLAGS = -c -g -O2 -Wall -mcmodel=medium -I${LAPACK_DIR}/include
-BUILD = mpd
+OMP_DIR = /opt/openmpi/gcc-7.5.0/4.1.0/
+CFLAGS = -g -O2 -Wall -mcmodel=medium -I$(LAPACK_DIR)/include -I$(OMP_DIR)/include -fopenmp -llapack -lm
+LDFLAGS = -mcmodel=medium -L$(LAPACK_DIR)/lib -L$(OMP_DIR)/lib -fopenmp 
+LINKS = -llapack -lm
 OBJS = mpd.o
+TARGET = mpd
 
-.PHONY: all clean
+.PHONY: all clean dep
 
-default: mpd
-all: $(BUILD)
-clean:
+all : $(TARGET)
+
+clean :
 	$(RM) *.o
+	$(RM) $(TARGET)
 
-mpd: $(OBJS)
-	$(CC) $^	$(LDLIBS) $(LDFLAGS) -o $@
+dep :
+	$(CC) $(CFLAGS) -M $(OBJS:.o=.c)
 
-mpd.o:	$($@:.o=.c)	Makefile
+$(TARGET) : $(OBJS)
+	$(CC) $(LDLIBS) $(LDFLAGS) -o $@ $(OBJS) $(LINKS)
 
-.c.o:
-	$(CC) $(CFLAGS) -o $@ $<
+.SUFFIXES : .c .o
+
+.c .o :
+	$(CC) $(CFLAGS) -c $<
