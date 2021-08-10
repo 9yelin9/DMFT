@@ -1,5 +1,14 @@
 // Magnetic Phase Diagram
 
+#define _USE_MATH_DEFINES
+
+#define LN 2
+#define LDA 2 
+#define LDVL 2
+#define LDVR 2
+
+#define EU(u, n, m) (u*2*2*(pow(n/4, 2)-pow(m, 2)))
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -7,355 +16,261 @@
 #include <lapack.h>
 #include <omp.h>
 
-#define _USE_MATH_DEFINES
+const int k = 100; // k interval
+lapack_int lwork = -1;
 
-#define LN 2
-#define LDA LN
-#define LDVL LN
-#define LDVR LN
-
-#define EU(u, n, m) (u*n*2*(pow(n/4, 2) - pow(m, 2)))
-
-const int itv = 128; // interval
-double tol = 1e-1; // tolerance
-lapack_int lwork = 1;
-
-typedef struct _HubbardModel {
+typedef struct HubbardModel {
 	double n;
 	double m;
 	double mu;
 	double e;
-
-	// 구조체에서 빼기(함수 내에서 선언)
-	lapack_complex_double w[LN];
-	lapack_complex_double v[LDVR*LN];
-} _HM;
+} HM;
 
 void EigenCalOpt() { // EigenCal optimizer
 	lapack_int ln = LN, lda = LDA, ldvl = LDVL, ldvr = LDVR, info;
-	lapack_complex_double wkopt;
+	lapack_complex_double w[LN], vl[LDVL*LN], vr[LDVR*LN], wkopt;
 	double rwork[2*LN];
 
 	lapack_complex_double a[LDA*LN] = {
-		1+1*I, 1+1*I,
-		1+1*I, 1+1*I
+		1 + 1*I, 1 + 1*I,
+		1 + 1*I, 1 + 1*I
 	};
 
-	lwork = -1;
-	LAPACK_zgeev("V", "V", &ln, a, &lda, 0, 0, &ldvl, 0, &ldvr, &wkopt, &lwork, rwork, &info);
+	LAPACK_zgeev("V", "V", &ln, a, &lda, w, vl, &ldvl, vr, &ldvr, &wkopt, &lwork, rwork, &info);
+	if(info != 0) {
+		printf("EigenCalOpt FAIL\n");
+		exit(1);
+	}
 	lwork = (lapack_int)creal(wkopt);
 }
 
-void EigenCal(char aorf, _HM *hm, double u, double k1, double k2) { // FM, AFM eigenproblem calculator
+void EigenCal(char aorf, char uord, HM *hm, double u, double k1, double k2, lapack_complex_double *w, lapack_complex_double *v) { // FM, AFM eigenproblem calculator
 	lapack_int ln = LN, lda = LDA, ldvl = LDVL, ldvr = LDVR, info;
-	lapack_complex_double *vl, *work;
-	int aorf_int;
+	lapack_complex_double vl[LDVL*LN], *work;
+	int aorf_int, uord_int;
 	double rwork[2*LN];
-	double a0real, a1real, a2real, a1imag, a2imag, a3real;
+	double a0re, a1re, a2re, a3re, a1im, a2im;
 
-	aorf_int = (2*aorf - 135)/5; // 'A' = -1, 'F' = 1
+	aorf_int = (2*aorf - 135)/5;  // 'A' = -1, 'F' =  1
+	uord_int = (2*uord - 153)/17; // 'U' =  1, 'D' = -1
 
-	a0real = u*(hm->n/4 - hm->m); // u*d1
-	a1real = a2real = -(1+cos(k1+k2)+cos(k1)+cos(k2));
-	a1imag = -(sin(k1+k2)+sin(k1)+sin(k2));
-	a2imag = sin(k1+k2)+sin(k1)+sin(k2);
-	a3real = u*(hm->n/4 - aorf_int*hm->m); // u*d2
+	a0re = u*(hm->n/4 - uord_int*hm->m);
+	a3re = u*(hm->n/4 - aorf_int*uord_int*hm->m);
+	a1re = -cos(k1+k2)-cos(k1)-cos(k2)-1;
+	a2re = -cos(k1+k2)-cos(k1)-cos(k2)-1;
+	a1im = -sin(k1+k2)-sin(k1)-sin(k2);
+	a2im =  sin(k1+k2)+sin(k1)+sin(k2);
 
 	lapack_complex_double a[LDA*LN] = {
-		a0real+0*I, a1real+a1imag*I,
-		a2real+a2imag*I, a3real+0*I
+		a0re + 0*I,    a1re + a1im*I,
+		a2re + a2im*I, a3re + 0*I
 	};
+	//printf("n : %f\tm : %f\n%cA : %f\t%f+%f\t%f+%f\t%f\n", hm->n, hm->m, uord, a0re, a1re, a1im, a2re, a2im, a3re);
 
-	vl = (lapack_complex_double*)malloc((LDVL*LN)*sizeof(lapack_complex_double));
 	work = (lapack_complex_double*)malloc(lwork*sizeof(lapack_complex_double));
-
-	LAPACK_zgeev("V", "V", &ln, a, &lda, hm->w, vl, &ldvl, hm->v, &ldvr, work, &lwork, rwork, &info);
-
-	if(info > 0) {
-		printf("LAPACK_zgeev FAIL\n");
+	LAPACK_zgeev("V", "V", &ln, a, &lda, w, vl, &ldvl, v, &ldvr, work, &lwork, rwork, &info);
+	if(info != 0) {
+		printf("EigenCal FAIL\n");
 		exit(1);
 	}
-
-	free(vl);
+	//printf("W : %f\t%f\t\nV : %f+%f\t%f+%f / %f+%f\t%f+%f\n", creal(w[0]), creal(w[1]), creal(v[0]), cimag(v[0]), creal(v[1]), cimag(v[1]), creal(v[2]), cimag(v[2]), creal(v[3]), cimag(v[3]));
 	free(work);
 }
 
-void MuCal(char aorf, _HM *hm, double u, double n_target) { // FM, AFM mu calculator
-	int i, j;
-	double k1, up1, n, tmp;
-// w, v 함수 내에서 정의하고 각각의 cpu에 공간 할당하기
-	n = 0;
-	hm->n = n_target;
-	hm->m = 0;
+void OccCnt(char aorf, HM *hm, double u, double *m) { // Occupation counter
+	lapack_complex_double w[LN], v[LDVR*LN];
+	double k1, k2, m_fm, m_afm = 0;
+	double up1_sum = 0, up2_sum = 0, dn1_sum = 0, dn2_sum = 0;
+	
+	for(int i=0; i<k*k; i++) {
+		k1 = -M_PI + 2*M_PI*(i/k)/k;
+		k2 = -M_PI + 2*M_PI*(i%k)/k;
+
+		EigenCal(aorf, 'U', hm, u, k1, k2, w, v);
+		if(creal(w[0]) < hm->mu) {
+			up1_sum += pow(creal(v[0]), 2) + pow(cimag(v[0]), 2);
+			up2_sum += pow(creal(v[1]), 2) + pow(cimag(v[1]), 2);
+			m_afm += fabs((pow(creal(v[0]), 2) + pow(cimag(v[0]), 2)) - (pow(creal(v[1]), 2) + pow(cimag(v[1]), 2)));
+		}	    
+		if(creal(w[1]) < hm->mu) {
+			up1_sum += pow(creal(v[2]), 2) + pow(cimag(v[2]), 2);
+			up2_sum += pow(creal(v[3]), 2) + pow(cimag(v[3]), 2);
+			m_afm += fabs((pow(creal(v[2]), 2) + pow(cimag(v[2]), 2)) - (pow(creal(v[3]), 2) + pow(cimag(v[3]), 2)));
+		}
+
+		EigenCal(aorf, 'D', hm, u, k1, k2, w, v);
+		if(creal(w[0]) < hm->mu) {
+			dn1_sum += pow(creal(v[0]), 2) + pow(cimag(v[0]), 2);
+			dn2_sum += pow(creal(v[1]), 2) + pow(cimag(v[1]), 2);
+		}	
+		if(creal(w[1]) < hm->mu) {
+			dn1_sum += pow(creal(v[2]), 2) + pow(cimag(v[2]), 2);
+			dn2_sum += pow(creal(v[3]), 2) + pow(cimag(v[3]), 2);
+		}
+	}
+	hm->n = (up1_sum + up2_sum + dn1_sum + dn2_sum)/(2*k*k);
+	m_fm = ((up1_sum + up2_sum) - (dn1_sum + dn2_sum))/(4*k*k);
+	
+	if(aorf > 67) *m = m_fm;
+	else          *m = m_afm/(2*k*k);
+
+	//printf("%f\t%f\t%f\t%f\n", hm->mu, hm->n, *m, hm->m);
+}
+
+void MCal(char aorf, HM *hm, double u, double n_target) { // FM, AFM m calculator
+	double m, itv;
+
+	hm->n = 0.1;
+	hm->m = 0.1;
 	hm->mu = -u;
 
-	while(n < n_target) {
-		up1 = 0;
-
-		for(i=0; i<itv; i++) {
-			k1 = -M_PI + 2*M_PI*i/(double)itv;
-			tmp = 0;
-//#pragma omp parallel for firstprivate(hm) reduction(+ : tmp)
-			for(j=0; j<itv; j++) {
-				double k2 = -M_PI + 2*M_PI*j/(double)itv;
-
-				EigenCal(aorf, hm, u, k1, k2);
-				if(creal(hm->w[0]) - EU(u, hm->n, hm->m) < hm->mu) {
-					tmp += pow(creal(hm->v[0]), 2) + pow(cimag(hm->v[0]), 2);
-				}	
-				if(creal(hm->w[1]) - EU(u, hm->n, hm->m) < hm->mu) {
-					tmp += pow(creal(hm->v[2]), 2) + pow(cimag(hm->v[2]), 2); 
-				}
-			}
-			up1 += tmp;
-		}
-		n = 4*up1/(itv*itv);
-		hm->mu += 0.1;
+	itv = 0.1;
+	while(1) {
+		OccCnt(aorf, hm, u, &m);
+		if(hm->n > n_target - itv) break;
+		hm->mu += itv;
 	}
-	hm->n = n;
-}
-
-void MCal(char aorf, _HM *hm, double u) { // FM, AFM m calculator
-	int i, j, itr;
-	double k1, k2, up1;
-
-	hm->m = 0.1;
-
-	for(itr=0; itr<128; itr++) {
-		up1 = 0;
-
-		for(i=0; i<itv; i++) {
-			k1 = -M_PI + 2*M_PI*i/(double)itv;
-			for(j=0; j<itv; j++) {
-				k2 = -M_PI + 2*M_PI*j/(double)itv;
-
-				EigenCal(aorf, hm, u, k1, k2);
-				if(creal(hm->w[0]) - EU(u, hm->n, hm->m) < hm->mu) {
-					up1 += pow(creal(hm->v[0]), 2) + pow(cimag(hm->v[0]), 2);
-				}	
-				if(creal(hm->w[1]) - EU(u, hm->n, hm->m) < hm->mu) {
-					up1 += pow(creal(hm->v[2]), 2) + pow(cimag(hm->v[2]), 2); 
-				}
-			}
+	
+	itv = 0.01;
+	for(int itr=0; itr<30; itr++) {
+		while(1) {
+			OccCnt(aorf, hm, u, &m);
+			if(hm->n > n_target) break;
+			hm->mu += itv;
 		}
-		hm->m = up1/(itv*itv) - hm->n/4;
+		if(fabs(m) < 1e-4) break;
+		hm->m = m;
+		hm->mu -= 0.1;
 	}
 }
 
-void ECal(char aorf, _HM *hm, double u) { // FM, AFM energy calculator
-	int i, j;
-	double k1, k2, e_up1, e_up2, e_dn1, e_dn2;
+void ECal(char aorf, HM *hm, double u, double n_target) { // FM, AFM energy calculator
+	lapack_complex_double w[LN], v[LDVR*LN];
+	double k1, k2;
+	double up1_sum = 0, up2_sum = 0, dn1_sum = 0, dn2_sum = 0;
+	
+	MCal(aorf, hm, u, n_target);
 
-	e_up1 = 0;
-	e_up2 = 0;
-	e_dn1 = 0;
-	e_dn2 = 0;
+	for(int i=0; i<k*k; i++) {
+		k1 = -M_PI + 2*M_PI*(i/k)/k;
+		k2 = -M_PI + 2*M_PI*(i%k)/k;
 
-	for(i=0; i<itv; i++) {
-		k1 = -M_PI + 2*M_PI*i/(double)itv;
-		for(j=0; j<itv; j++) {
-			k2 = -M_PI + 2*M_PI*j/(double)itv;
+		EigenCal(aorf, 'U', hm, u, k1, k2, w, v);
+		if(creal(w[0]) < hm->mu) {
+			up1_sum += (creal(w[0])) * (pow(creal(v[0]), 2) + pow(cimag(v[0]), 2));
+			up2_sum += (creal(w[0])) * (pow(creal(v[1]), 2) + pow(cimag(v[1]), 2));
+		}	    
+		if(creal(w[1]) < hm->mu) {
+			up1_sum +=  (creal(w[1])) * (pow(creal(v[2]), 2) + pow(cimag(v[2]), 2));
+			up2_sum +=  (creal(w[1])) * (pow(creal(v[3]), 2) + pow(cimag(v[3]), 2));
+		}
 
-			EigenCal(aorf, hm, u, k1, k2);
-			if(creal(hm->w[0]) - EU(u, hm->n, hm->m) < hm->mu) {
-				e_up1 += (creal(hm->w[0]) + hm->mu) * (pow(creal(hm->v[0]), 2) + pow(cimag(hm->v[0]), 2));
-				e_up2 += (creal(hm->w[0]) + hm->mu) * (pow(creal(hm->v[1]), 2) + pow(cimag(hm->v[1]), 2));
-			}	
-			if(creal(hm->w[1]) - EU(u, hm->n, hm->m) < hm->mu) {
-				e_up1 += (creal(hm->w[1]) + hm->mu) * (pow(creal(hm->v[2]), 2) + pow(cimag(hm->v[2]), 2));
-				e_up2 += (creal(hm->w[1]) + hm->mu) * (pow(creal(hm->v[3]), 2) + pow(cimag(hm->v[3]), 2));
-			}
+		EigenCal(aorf, 'D', hm, u, k1, k2, w, v);
+		if(creal(w[0]) < hm->mu) {
+			dn1_sum += (creal(w[0])) * (pow(creal(v[0]), 2) + pow(cimag(v[0]), 2));
+			dn2_sum += (creal(w[0])) * (pow(creal(v[1]), 2) + pow(cimag(v[1]), 2));
+		}	
+		if(creal(w[1]) < hm->mu) {
+			dn1_sum += (creal(w[1])) * (pow(creal(v[2]), 2) + pow(cimag(v[2]), 2));
+			dn2_sum += (creal(w[1])) * (pow(creal(v[3]), 2) + pow(cimag(v[3]), 2));
 		}
 	}
-
-	hm->m = -hm->m;
-	for(i=0; i<itv; i++) {
-		k1 = -M_PI + 2*M_PI*i/(double)itv;
-		for(j=0; j<itv; j++) {
-			k2 = -M_PI + 2*M_PI*i/(double)itv;
-
-			EigenCal(aorf, hm, u, k1, k2);
-			if(creal(hm->w[0]) - EU(u, hm->n, hm->m) < hm->mu) {
-				e_dn1 += (creal(hm->w[0]) + hm->mu) * (pow(creal(hm->v[0]), 2) + pow(cimag(hm->v[0]), 2));
-				e_dn2 += (creal(hm->w[0]) + hm->mu) * (pow(creal(hm->v[1]), 2) + pow(cimag(hm->v[1]), 2));
-			}	
-			if(creal(hm->w[1]) - EU(u, hm->n, hm->m) < hm->mu) {
-				e_dn1 += (creal(hm->w[1]) + hm->mu) * (pow(creal(hm->v[2]), 2) + pow(cimag(hm->v[2]), 2));
-				e_dn2 += (creal(hm->w[1]) + hm->mu) * (pow(creal(hm->v[3]), 2) + pow(cimag(hm->v[3]), 2));
-			}
-		}
-	}
-	hm->e = (e_up1 + e_up2 + e_dn1 + e_dn2)/(itv*itv);
-	hm->m = -hm->m;
+	hm->e = (up1_sum + up2_sum + dn1_sum + dn2_sum)/(4*k*k);
 }
 
-void EnergyPrt(double n_target) { // FM, AFM energy printor
+void EPrt(char aorf, char uord, double n_target, double u_start, double u_stop) { // FM, AFM energy printor
+	HM hm;
+	lapack_complex_double w[LN], v[LDVR*LN];
 	FILE *fp;
 	char buf[128];
-	int i, p;
+	int p = 0;
 	double k1, k2, u;
 
-	_HM *hm_fm = malloc(sizeof(_HM));
-	_HM *hm_fm_ = malloc(sizeof(_HM));
-	_HM *hm_afm = malloc(sizeof(_HM));
-
-	for(u=1; u<15; u+=2) {
-		sprintf(buf, "data/fmafm_n%.1fu%.1f.txt", n_target, u);
+	for(u=u_start; u<u_stop; u+=2) {
+		sprintf(buf, "data/%c%c_n%.1fu%.1f.txt", aorf, uord, n_target, u);
 		fp = fopen(buf, "w");
-		fprintf(fp, "path\tfm energy1\tfm energy2\tfm_ energy1\tfm_ energy2\tafm energy1\tafm energy2\n");
+		fprintf(fp, "path\tenergy1\tenergy2\tmu\n");
 
-		MuCal('F', hm_fm, u, n_target);
-		MCal('F', hm_fm, u);
-		ECal('F', hm_fm, u);
+		MCal(aorf, &hm, u, n_target);
 
-		hm_fm_->n = hm_fm->n;
-		hm_fm_->m = hm_fm->m;
+		for(int i=0; i<k; i++) { // rb(0, 0) ~ Mb(pi, -pi)
+			k1 =  M_PI*i/(double)k;
+			k2 = -M_PI*i/(double)k;
 
-		MuCal('A', hm_afm, u, n_target);
-		MCal('A', hm_afm, u);
-		ECal('A', hm_afm, u);
-
-		p = 0;
-
-		for(i=0; i<itv; i++) { // rb(0,0) ~ Mb(pi,-pi)
-			k1 = M_PI*i/(double)itv;
-			k2 = -M_PI*i/(double)itv;
-
-			EigenCal('F', hm_fm, u, k1, k2);
-			EigenCal('F', hm_fm_, u, k1, k2);
-			EigenCal('A', hm_afm, u, k1, k2);
-			fprintf(fp, "%d\t%f\t%f\t%f\t%f\t%f\t%f\n", p, creal(hm_fm->w[0]), creal(hm_fm->w[1]), creal(hm_fm_->w[0]), creal(hm_fm_->w[1]), creal(hm_afm->w[0]), creal(hm_afm->w[1]));
+			EigenCal(aorf, uord, &hm, u, k1, k2, w, v);
+			fprintf(fp, "%d\t%f\t%f\t%f\n", p, creal(w[0]), creal(w[1]), hm.mu);
 			p++;
 		}
 
-		for(i=0; i<itv; i++) { // Mb(pi,-pi) ~ rb(2*pi,0)
-			k1 = M_PI + M_PI*i/(double)itv;
-			k2 = -M_PI + M_PI*i/(double)itv;
+		for(int i=0; i<k; i++) { // Mb(pi, -pi) ~ rb(2*pi, 0)
+			k1 =  M_PI + M_PI*i/(double)k;
+			k2 = -M_PI + M_PI*i/(double)k;
 
-			EigenCal('F', hm_fm, u, k1, k2);
-			EigenCal('F', hm_fm_, u, k1, k2);
-			EigenCal('A', hm_afm, u, k1, k2);
-			fprintf(fp, "%d\t%f\t%f\t%f\t%f\t%f\t%f\n", p, creal(hm_fm->w[0]), creal(hm_fm->w[1]), creal(hm_fm_->w[0]), creal(hm_fm_->w[1]), creal(hm_afm->w[0]), creal(hm_afm->w[1]));
+			EigenCal(aorf, uord, &hm, u, k1, k2, w, v);
+			fprintf(fp, "%d\t%f\t%f\t%f\n", p, creal(w[0]), creal(w[1]), hm.mu);
 			p++;
 		}
 
-		for(i=0; i<itv; i++) { // rb(2*pi,0) ~ Xb(pi,0) ~ r(0,0)
-			k1 = 2*M_PI - 2*M_PI*i/(double)itv;
+		for(int i=0; i<k; i++) { // rb(2*pi, 0) ~ Xb(pi, 0) ~ r(0, 0)
+			k1 = 2*M_PI - 2*M_PI*i/(double)k;
 
-			EigenCal('F', hm_fm, u, k1, k2);
-			EigenCal('F', hm_fm_, u, k1, k2);
-			EigenCal('A', hm_afm, u, k1, k2);
-			fprintf(fp, "%d\t%f\t%f\t%f\t%f\t%f\t%f\n", p, creal(hm_fm->w[0]), creal(hm_fm->w[1]), creal(hm_fm_->w[0]), creal(hm_fm_->w[1]), creal(hm_afm->w[0]), creal(hm_afm->w[1]));
+			EigenCal(aorf, uord, &hm, u, k1, k2, w, v);
+			fprintf(fp, "%d\t%f\t%f\t%f\n", p, creal(w[0]), creal(w[1]), hm.mu);
 			p++;
 		}
-
-		fclose(fp);
-		free(hm_fm);
-		free(hm_afm);
 		printf("%s is done!\n", buf);
+		fclose(fp);
 	}
-	printf("EnergyPrt is done!\n");
+	printf("EPrt is done!\n");
 }
 
-void FMPMGraph() { // FM/PM transition graph
-	//FILE *fp;
-	//double time;
+void PMGraph(char aorf) { // FM/PM, AFM/PM transition graph
+	HM hm;
 	double n_target, u;
 
-	//fp = fopen("data/fmpm.txt", "w");
-	//fprintf(fp, "FM/PM Transition\nn/2\tt/u\telapsed time(s)\n");
-
-	for(int n_target_int=20; n_target_int>0; n_target_int-=2) {
-		//time = clock();
+	printf("n/2\t1/u\tm\n");
+	for(int n_target_int=12; n_target_int>0; n_target_int-=2) {
+		clock_t t0 = clock();
 		n_target = (double)n_target_int*0.1;
-		_HM *hm = malloc(sizeof(_HM));
 
-		for(u=5; u<15; u+=1) {
-			MuCal('F', hm, u, n_target);
-			MCal('F', hm, u);
-			printf("%f\t%f\t%f\n", hm->n/2, 1/u, hm->m);
+		for(u=1; u<15; u+=1) {
+			MCal(aorf, &hm, u, n_target);
+			printf("%f\t%f\t%f\n", hm.n/2, 1/u, hm.m);
 
-			//if(fabs(hm->m) > tol) break;
+			if(fabs(hm.m) > hm.n/2) break;
 		}
-		//fprintf(fp, "%f\t%f\t%f\n", hm->n/2, 1/u, (clock()-time)*0.000001);
-		free(hm);
+		clock_t t1 = clock();
+		printf("elapsed time : %f\n", (double)(t1-t0)/CLOCKS_PER_SEC);
 	}
-
-	printf("FMPMGraph is done!\n");
-	//fclose(fp);
-}
-
-void AFMPMGraph() { // AFM/PM transition graph
-	//FILE *fp;
-	//double time;
-	double n_target, u;
-
-	//fp = fopen("data/afmpm.txt", "w");
-	//fprintf(fp, "AFM/PM Transition\nn/2\tt/u\telapsed time(s)\n");
-
-	for(int n_target_int=20; n_target_int>10; n_target_int-=2) {
-		//time = clock();
-		n_target = (double)n_target_int*0.1;
-		_HM *hm = malloc(sizeof(_HM));
-
-		for(u=1; u<15; u+=0.1) {
-			MuCal('A', hm, u, n_target);
-			MCal('A', hm, u);
-
-			if(fabs(hm->m) > tol) break;
-		}
-		//fprintf(fp, "%f\t%f\t%f\n", hm->n/2, 1/u, (clock()-time)*0.000001);
-		free(hm);
-	}
-
-	printf("AFMPMGraph is done!\n");
-	//fclose(fp);
 }
 
 void FMAFMGraph() { // FM/AFM transition graph
-	//FILE *fp;
-	//double time;
+	HM hm_fm, hm_afm;
 	double n_target, u;
 
-	//fp = fopen("data/fmafm.txt", "w");
-	//fprintf(fp, "FM/AFM Transition\nn/2\tt/u\telapsed time(s)\n");
-
+	printf("1/u\tfm n/2\tafm n/2\tfm energy\tafm energy\tfm m\tafm m\tfm mu\tafm mu\tfm EU\tafm EU\n");
 	for(int n_target_int=16; n_target_int>15; n_target_int-=2) {
-		//time = clock();
+		clock_t t0 = clock();
 		n_target = (double)n_target_int*0.1;
-		_HM *hm_fm = malloc(sizeof(_HM));
-		_HM *hm_afm = malloc(sizeof(_HM));
-		printf("n/2(fm/afm)\t1/u\tfm energy\tafm energy\tfm m\tafm m\n");
 
 		for(u=5; u<15; u+=2) {
-			MuCal('F', hm_fm, u, n_target);
-			MCal('F', hm_fm, u);
-			ECal('F', hm_fm, u);
+			ECal('F', &hm_fm, u, n_target);
+			ECal('A', &hm_afm, u, n_target);
+			printf("%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\n", 1/u, hm_fm.n/2, hm_afm.n/2, hm_fm.e, hm_afm.e, hm_fm.m, hm_afm.m, hm_fm.mu, hm_afm.mu, EU(u, hm_fm.n, hm_fm.m), EU(u, hm_afm.n, hm_afm.m));
 
-			MuCal('A', hm_afm, u, n_target);
-			MCal('A', hm_afm, u);
-			ECal('A', hm_afm, u);
-
-			printf("%f/%f\t%f\t%f\t%f\t%f\t%f\n", hm_fm->n/2, hm_afm->n/2, 1/u, hm_fm->e, hm_afm->e, hm_fm->m, hm_afm->m);
-			//if(hm_fm->energy > hm_afm->energy) break;
+			//if(hm_fm.e > hm_afm.e) break;
 		}
-		//fprintf(fp, "%f\t%f\t%f\n", hm_fm->n/2, 1/u, (clock()-time)*0.000001);
-		free(hm_fm);
-		free(hm_afm);
+		clock_t t1 = clock();
+		printf("elapsed time : %f\n", (double)(t1-t0)/CLOCKS_PER_SEC);
 	}
-
-	printf("FMAFMGraph is done!\n");
-	//fclose(fp);
 }
 
-
-
 int main() {
-	//omp_set_num_threads(4);
+	//omp_set_num_threads(16);
 	EigenCalOpt();
-	//EnergyPrt(16);
-	//FMPMGraph();
-	//AFMPMGraph();
+	//EPrt('A', 'U', 1.6, 2, 3);
+	//PMGraph('F');
+	//PMGraph('A');
 	FMAFMGraph();
 
 	return 0;
