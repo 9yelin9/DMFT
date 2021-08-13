@@ -9,9 +9,9 @@ module load libframe/gcc-7.5.0/2.2
 module load gnuplot/5.4.1
 module load openmpi/gcc-7.5.0/4.1.0
 
-JOB="./mpd <n_target>"
+JOB="./mpd 2.0"
 echo "#$JOB\n"
 
-./mpd <n_target>
+./mpd 2.0
 
 echo "\n#FINISHED on $(date)"
