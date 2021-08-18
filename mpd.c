@@ -8,7 +8,6 @@
 #define LDVR 2 
 
 #define EU(u, n, m) (u*2*2*(pow(n/4, 2)-pow(m, 2)))
-// n_up, n_dn 정보도 저장해서 맞는지 확인
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,6 +24,7 @@ typedef struct HubbardModel {
 	double m;
 	double mu;
 	double e;
+	double eu;
 } HM;
 
 void EigenCalOpt() { // EigenCal optimizer
@@ -105,36 +105,39 @@ void OccCnt(char aorf, HM *hm, double u, double *n, double *m) { // Occupation c
 			dn2_sum += pow(creal(v[3]), 2) + pow(cimag(v[3]), 2);
 		}
 	}
-	*n = (up1_sum + up2_sum + dn1_sum + dn2_sum)/(2*k*k);
+	*n = (up1_sum + up2_sum + dn1_sum + dn2_sum)/(k*k);
 	*m = (up1_sum - dn1_sum)/(2*k*k);
 }
 
 void MCal(char aorf, HM *hm, double u, double n_target) { // FM, AFM m calculator
-	double n, m, itv;
+	double n, m, m_cvg[3], itv;
 
 	hm->n = n_target;
 	hm->m = n_target/8;
-	hm->mu = -u;
+	hm->mu = -3.5;
 
-	printf("#%c\tmu\tn\tm\n", aorf);
-
-	for(int i=0; i<30; i++) {
+	printf("#%c\tn\tm\n", aorf);
+	for(int i=0; i<50; i++) {
 		n = 0;
 		itv = 0.1;
 
-		while(fabs(n - n_target) > 1e-3) {
+		while(itv > 1e-5) {
 			OccCnt(aorf, hm, u, &n, &m);
+			if(fabs(n - n_target) < 1e-4) break;
+
 			if(n > n_target - itv) {
 				hm->mu -= itv;
 				itv *= 0.1;
-
-				if(itv < 1e-6) break;
 			}
 			hm->mu += itv;
 		}
-		printf("%2d\t%f\t%f\t%f\n", i, hm->mu, n, m);
+		printf("%2d\t%f\t%f\n", i, n, m);
+		m_cvg[i%3] = m;
 		hm->m = m;
-		hm->mu -= 1;
+		hm->mu = floor(hm->mu);
+
+		if(fabs(m) < n_target/20) break;
+		if(fabs((m_cvg[0] + m_cvg[1] + m_cvg[2])/3 - m) < 1e-6) break;
 	}
 	hm->n = n;
 }
@@ -170,7 +173,8 @@ void ECal(char aorf, HM *hm, double u, double n_target) { // FM, AFM energy calc
 			dn2_sum += creal(w[1]) * (pow(creal(v[3]), 2) + pow(cimag(v[3]), 2));
 		}
 	}
-	hm->e = (up1_sum + up2_sum + dn1_sum + dn2_sum)/(k*k) - EU(u, hm->n, hm->m);
+	hm->e = (up1_sum + up2_sum + dn1_sum + dn2_sum)/(k*k);
+	hm->eu = u*2*(up1_sum*dn1_sum + up2_sum*dn2_sum)/(k*k*k*k); 
 }
 
 void EPrt(char aorf, char uord, double n_target, double u) { // FM, AFM energy printor
@@ -217,60 +221,104 @@ void EPrt(char aorf, char uord, double n_target, double u) { // FM, AFM energy p
 	fclose(fp);
 }
 
-void PMGraph(char aorf, double n_target) { // FM/PM, AFM/PM transition graph
+void PGraphTest(char aorf, double n_target) { // FM/PM, AFM/PM transition graph test
 	HM hm;
-
-	printf("#n_target = %f\n#n/2\t1/u\tm\n", n_target);
+	double u_start = 1;
 
 	clock_t t0 = clock();
-	for(double u=1; u<15; u+=1) {
+	for(double u=u_start; u<15; u+=0.1) {
+		printf("#1/u = %f\n", 1/u);
 		MCal(aorf, &hm, u, n_target);
-		printf("%f\t%f\t%f\n", hm.n/2, 1/u, hm.m);
+		printf("\n");
 
-		if(fabs(hm.m) > hm.n/2) break;
+		if(fabs(hm.m) > n_target/20) break;
 	}
 	clock_t t1 = clock();
 
-	printf("#elapsed time : %f\n", (double)(t1-t0)/CLOCKS_PER_SEC);
+	printf("#elapsed time(s) : %f\n\n", (double)(t1-t0)/CLOCKS_PER_SEC);
 }
 
-void FMAFMGraph(double n_target) { // FM/AFM transition graph
+void FAGraphTest(double n_target) { // FM/AFM transition graph
 	HM hm_fm, hm_afm;
 
-	//printf("#n_target = %f\n#n/2(fm/afm)\t1/u\tfm e\tafm e\n", n_target);
-	printf("#n_target = %f\n", n_target);
-
 	clock_t t0 = clock();
-	for(double u=5; u<10; u+=1) {
+	for(double u=5; u<15; u+=1) {
+		printf("#1/u = %f\n", 1/u);
 		ECal('F', &hm_fm, u, n_target);
+		printf("\n");
 		ECal('A', &hm_afm, u, n_target);
-		printf("\n#n/2(fm/afm)\t1/u\tfm e\tafm e\n%f/%f\t%f\t%f\t%f\n\n", hm_fm.n/2, hm_afm.n/2, 1/u, hm_fm.e, hm_afm.e);
-		//printf("%f/%f\t%f\t%f\t%f\n", hm_fm.n/2, hm_afm.n/2, 1/u, hm_fm.e, hm_afm.e);
+		printf("\n#1/u\tfm e\tafm e\tfm eu\tafm eu\tfm EU\tafm EU\n%f\t%f\t%f\t%f\t%f\t%f\t%f\t\n\n", 1/u, hm_fm.e, hm_afm.e, hm_fm.eu, hm_afm.eu, EU(u, hm_fm.n, hm_fm.m), EU(u, hm_afm.n, hm_afm.m));
 
 		//if(hm_fm.e > hm_afm.e) break;
 	}
 	clock_t t1 = clock();
 
-	printf("#elapsed time : %f\n", (double)(t1-t0)/CLOCKS_PER_SEC);
+	printf("#elapsed time(s) : %f\n", (double)(t1-t0)/CLOCKS_PER_SEC);
 
 }
 
-// main 함수에 인자로 주면 컴파일 오류 막을 수 있음
+void PGraph(char aorf) { // FM/PM, AFM/PM transition graph
+	HM hm;
+	FILE *fp;
+	char buf[128];
+	double n_target, n_start, n_stop, u, u_start;
+
+	//sprintf(buf, "data/%cP.txt", aorf);
+	fp = fopen(buf, "w");
+	fprintf(fp, "#n/2\t1/u\tm\telapsed time(s)\n");
+
+	if(aorf > 67) { // FM
+		n_start = 1.4;
+		n_stop  = 0.1;
+		u_start = 5;
+	}
+	else { // AFM
+		n_start = 2.0;
+		n_stop  = 0.9;
+		u_start = 1;
+	}
+
+	clock_t tt0 = clock();
+	for(n_target=n_start; n_target>n_stop; n_target-=0.2) {
+
+		clock_t t0 = clock();
+		printf("#n_target = %.1f\n", n_target);
+		for(u=u_start; u<15; u+=0.1) {
+			printf("#1/u = %f\n", 1/u);
+			MCal(aorf, &hm, u, n_target);
+			printf("\n");
+			if(fabs(hm.m) > n_target/20) break;
+		}
+		clock_t t1 = clock();
+
+		fprintf(fp, "%f\t%f\t%f\t%f\n", hm.n/2, 1/u, hm.m, (double)(t1-t0)/CLOCKS_PER_SEC);
+	}
+	clock_t tt1 = clock();
+
+	printf("#total elapsed time(s) : %f\n", (double)(tt1-tt0)/CLOCKS_PER_SEC);
+	fclose(fp);
+}
+
 int main(int argc, char *argv[]) {
 	if(argc != 2) {
 		printf("Usage : %s <n_target>\n", argv[0]);
 		exit(1);
 	}
-
 	double n_target = atof(argv[1]);
+	printf("#./mpd %.1f\n", n_target);
 
-	//omp_set_num_threads(16);
 	EigenCalOpt();
 
+	// Test
 	//EPrt('A', 'U', n_target, 5);
-	//PMGraph('F', n_target);
-	//PMGraph('A', n_target);
-	FMAFMGraph(n_target);
+	//PGraphTest('F', n_target);
+	//PGraphTest('A', n_target);
+	FAGraphTest(n_target);
+
+	// Data print
+	//PGraph('F');
+	//PGraph('A');
+	//FAGraph();
 
 	return 0;
 }
