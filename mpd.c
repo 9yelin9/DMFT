@@ -7,8 +7,6 @@
 #define LDVL 2 
 #define LDVR 2 
 
-#define EU(u, n, m) (u*2*2*(pow(n/4, 2)-pow(m, 2)))
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -117,7 +115,7 @@ void MCal(char aorf, HM *hm, double u, double n_target) { // FM, AFM m calculato
 	hm->mu = -3.5;
 
 	printf("#%c\tn\tm\n", aorf);
-	for(int i=0; i<50; i++) {
+	for(int i=0; i<100; i++) {
 		n = 0;
 		itv = 0.1;
 
@@ -136,7 +134,7 @@ void MCal(char aorf, HM *hm, double u, double n_target) { // FM, AFM m calculato
 		hm->m = m;
 		hm->mu = floor(hm->mu);
 
-		if(fabs(m) < n_target/20) break;
+		//if(fabs(m) < n_target/20) break;
 		if(fabs((m_cvg[0] + m_cvg[1] + m_cvg[2])/3 - m) < 1e-6) break;
 	}
 	hm->n = n;
@@ -146,6 +144,7 @@ void ECal(char aorf, HM *hm, double u, double n_target) { // FM, AFM energy calc
 	lapack_complex_double w[LN], v[LDVR*LN];
 	double k1, k2;
 	double up1_sum = 0, up2_sum = 0, dn1_sum = 0, dn2_sum = 0;
+	double eup1_sum = 0, eup2_sum = 0, edn1_sum = 0, edn2_sum = 0;
 
 	MCal(aorf, hm, u, n_target);
 
@@ -155,25 +154,37 @@ void ECal(char aorf, HM *hm, double u, double n_target) { // FM, AFM energy calc
 
 		EigenCal(aorf, 'U', hm, u, k1, k2, w, v);
 		if(creal(w[0]) < hm->mu) {
-			up1_sum += creal(w[0]) * (pow(creal(v[0]), 2) + pow(cimag(v[0]), 2));
-			up2_sum += creal(w[0]) * (pow(creal(v[1]), 2) + pow(cimag(v[1]), 2));
+			up1_sum += pow(creal(v[0]), 2) + pow(cimag(v[0]), 2);
+			up2_sum += pow(creal(v[1]), 2) + pow(cimag(v[1]), 2);
+
+			eup1_sum += creal(w[0]) * (pow(creal(v[0]), 2) + pow(cimag(v[0]), 2));
+			eup2_sum += creal(w[0]) * (pow(creal(v[1]), 2) + pow(cimag(v[1]), 2));
 		}	    
 		if(creal(w[1]) < hm->mu) {
-			up1_sum += creal(w[1]) * (pow(creal(v[2]), 2) + pow(cimag(v[2]), 2));
-			up2_sum += creal(w[1]) * (pow(creal(v[3]), 2) + pow(cimag(v[3]), 2));
+			up1_sum += pow(creal(v[2]), 2) + pow(cimag(v[2]), 2);
+			up2_sum += pow(creal(v[3]), 2) + pow(cimag(v[3]), 2);
+
+			eup1_sum += creal(w[1]) * (pow(creal(v[2]), 2) + pow(cimag(v[2]), 2));
+			eup2_sum += creal(w[1]) * (pow(creal(v[3]), 2) + pow(cimag(v[3]), 2));
 		}
 
 		EigenCal(aorf, 'D', hm, u, k1, k2, w, v);
 		if(creal(w[0]) < hm->mu) {
-			dn1_sum += creal(w[0]) * (pow(creal(v[0]), 2) + pow(cimag(v[0]), 2));
-			dn2_sum += creal(w[0]) * (pow(creal(v[1]), 2) + pow(cimag(v[1]), 2));
+			dn1_sum += pow(creal(v[0]), 2) + pow(cimag(v[0]), 2);
+			dn2_sum += pow(creal(v[1]), 2) + pow(cimag(v[1]), 2);
+
+			edn1_sum += creal(w[0]) * (pow(creal(v[0]), 2) + pow(cimag(v[0]), 2));
+			edn2_sum += creal(w[0]) * (pow(creal(v[1]), 2) + pow(cimag(v[1]), 2));
 		}	
 		if(creal(w[1]) < hm->mu) {
-			dn1_sum += creal(w[1]) * (pow(creal(v[2]), 2) + pow(cimag(v[2]), 2));
-			dn2_sum += creal(w[1]) * (pow(creal(v[3]), 2) + pow(cimag(v[3]), 2));
+			dn1_sum += pow(creal(v[2]), 2) + pow(cimag(v[2]), 2);
+			dn2_sum += pow(creal(v[3]), 2) + pow(cimag(v[3]), 2);
+
+			edn1_sum += creal(w[1]) * (pow(creal(v[2]), 2) + pow(cimag(v[2]), 2));
+			edn2_sum += creal(w[1]) * (pow(creal(v[3]), 2) + pow(cimag(v[3]), 2));
 		}
 	}
-	hm->e = (up1_sum + up2_sum + dn1_sum + dn2_sum)/(k*k);
+	hm->e = (eup1_sum + eup2_sum + edn1_sum + edn2_sum)/(k*k);
 	hm->eu = u*2*(up1_sum*dn1_sum + up2_sum*dn2_sum)/(k*k*k*k); 
 }
 
@@ -238,18 +249,18 @@ void PGraphTest(char aorf, double n_target) { // FM/PM, AFM/PM transition graph 
 	printf("#elapsed time(s) : %f\n\n", (double)(t1-t0)/CLOCKS_PER_SEC);
 }
 
-void FAGraphTest(double n_target) { // FM/AFM transition graph
-	HM hm_fm, hm_afm;
+void FAGraphTest(double n_target) { // FM/AFM transition graph test
+	HM hm_f, hm_a;
 
 	clock_t t0 = clock();
-	for(double u=5; u<15; u+=1) {
+	for(double u=5; u<10; u+=0.5) {
 		printf("#1/u = %f\n", 1/u);
-		ECal('F', &hm_fm, u, n_target);
+		ECal('F', &hm_f, u, n_target);
 		printf("\n");
-		ECal('A', &hm_afm, u, n_target);
-		printf("\n#1/u\tfm e\tafm e\tfm eu\tafm eu\tfm EU\tafm EU\n%f\t%f\t%f\t%f\t%f\t%f\t%f\t\n\n", 1/u, hm_fm.e, hm_afm.e, hm_fm.eu, hm_afm.eu, EU(u, hm_fm.n, hm_fm.m), EU(u, hm_afm.n, hm_afm.m));
+		ECal('A', &hm_a, u, n_target);
+		printf("\n#1/u\tf e\ta e\tf eu\ta eu\tf e-eu\ta e-eu\n%f\t%f\t%f\t%f\t%f\t%f\t%f\t\n\n", 1/u, hm_f.e, hm_a.e, hm_f.eu, hm_a.eu, hm_f.e-hm_f.eu, hm_a.e-hm_a.eu);
 
-		//if(hm_fm.e > hm_afm.e) break;
+		//if(hm_f.e < hm_a.e) break;
 	}
 	clock_t t1 = clock();
 
@@ -297,6 +308,16 @@ void PGraph(char aorf) { // FM/PM, AFM/PM transition graph
 
 	printf("#total elapsed time(s) : %f\n", (double)(tt1-tt0)/CLOCKS_PER_SEC);
 	fclose(fp);
+}
+
+void FAGraph() { // FM/AFM transition graph
+	//HM hm_f, hm_a;
+	FILE *fp;
+	char buf[128];
+
+	//sprintf(buf, "data/FA.txt");
+	fp = fopen(buf, "w");
+	fprintf(fp, "#n/2\t1/u\tm\telapsed time(s)\n");
 }
 
 int main(int argc, char *argv[]) {
