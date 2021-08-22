@@ -74,79 +74,11 @@ void EigenCal(char aorf_c, char uord_c, HM *hm, double u, double k1, double k2, 
 	free(work);
 }
 
-void OccCnt(char aorf, HM *hm, double u, double *n, double *m) { // Occupation counter
-	lapack_complex_double w[LN], v[LDVR*LN];
-	double k1, k2;
-	double up1_sum = 0, up2_sum = 0, dn1_sum = 0, dn2_sum = 0;
-
-	for(int i=0; i<k*k; i++) {
-		k1 = -M_PI + 2*M_PI*(i/k)/k;
-		k2 = -M_PI + 2*M_PI*(i%k)/k;
-
-		EigenCal(aorf, 'U', hm, u, k1, k2, w, v);
-		if(creal(w[0]) < hm->mu) {
-			up1_sum += pow(creal(v[0]), 2) + pow(cimag(v[0]), 2);
-			up2_sum += pow(creal(v[1]), 2) + pow(cimag(v[1]), 2);
-		}	    
-		if(creal(w[1]) < hm->mu) {
-			up1_sum += pow(creal(v[2]), 2) + pow(cimag(v[2]), 2);
-			up2_sum += pow(creal(v[3]), 2) + pow(cimag(v[3]), 2);
-		}
-
-		EigenCal(aorf, 'D', hm, u, k1, k2, w, v);
-		if(creal(w[0]) < hm->mu) {
-			dn1_sum += pow(creal(v[0]), 2) + pow(cimag(v[0]), 2);
-			dn2_sum += pow(creal(v[1]), 2) + pow(cimag(v[1]), 2);
-		}	
-		if(creal(w[1]) < hm->mu) {
-			dn1_sum += pow(creal(v[2]), 2) + pow(cimag(v[2]), 2);
-			dn2_sum += pow(creal(v[3]), 2) + pow(cimag(v[3]), 2);
-		}
-	}
-	*n = (up1_sum + up2_sum + dn1_sum + dn2_sum)/(k*k);
-	*m = (up1_sum - dn1_sum)/(2*k*k);
-}
-
-void MCal(char aorf, HM *hm, double u, double n_target) { // FM, AFM m calculator
-	double n, m, m_cvg[3], itv;
-
-	hm->n = n_target;
-	hm->m = n_target/8;
-	hm->mu = -3.5;
-
-	printf("#%c\tn\tm\n", aorf);
-	for(int i=0; i<100; i++) {
-		n = 0;
-		itv = 0.1;
-
-		while(itv > 1e-5) {
-			OccCnt(aorf, hm, u, &n, &m);
-			if(fabs(n - n_target) < 1e-4) break;
-
-			if(n > n_target - itv) {
-				hm->mu -= itv;
-				itv *= 0.1;
-			}
-			hm->mu += itv;
-		}
-		printf("%2d\t%f\t%f\n", i, n, m);
-		m_cvg[i%3] = m;
-		hm->m = m;
-		hm->mu = floor(hm->mu);
-
-		//if(fabs(m) < n_target/20) break;
-		if(fabs((m_cvg[0] + m_cvg[1] + m_cvg[2])/3 - m) < 1e-6) break;
-	}
-	hm->n = n;
-}
-
-void ECal(char aorf, HM *hm, double u, double n_target) { // FM, AFM energy calculator
+void OccCal(char aorf, HM *hm, double u, double *n, double *m, double *e, double *eu) { // Occupation calculator
 	lapack_complex_double w[LN], v[LDVR*LN];
 	double k1, k2;
 	double up1_sum = 0, up2_sum = 0, dn1_sum = 0, dn2_sum = 0;
 	double eup1_sum = 0, eup2_sum = 0, edn1_sum = 0, edn2_sum = 0;
-
-	MCal(aorf, hm, u, n_target);
 
 	for(int i=0; i<k*k; i++) {
 		k1 = -M_PI + 2*M_PI*(i/k)/k;
@@ -184,8 +116,45 @@ void ECal(char aorf, HM *hm, double u, double n_target) { // FM, AFM energy calc
 			edn2_sum += creal(w[1]) * (pow(creal(v[3]), 2) + pow(cimag(v[3]), 2));
 		}
 	}
-	hm->e = (eup1_sum + eup2_sum + edn1_sum + edn2_sum)/(k*k);
-	hm->eu = u*2*(up1_sum*dn1_sum + up2_sum*dn2_sum)/(k*k*k*k); 
+	*n = (up1_sum + up2_sum + dn1_sum + dn2_sum)/(k*k);
+	*m = (up1_sum - dn1_sum)/(2*k*k);
+	*e = (eup1_sum + eup2_sum + edn1_sum + edn2_sum)/(k*k);
+	*eu = u*(up1_sum*dn1_sum + up2_sum*dn2_sum)/(k*k*k*k); 
+}
+
+void MECal(char aorf, HM *hm, double u, double n_target) { // FM, AFM m, energy calculator
+	double n, m, m_cvg[3], e, eu, itv;
+
+	hm->n = n_target;
+	hm->m = n_target/8;
+	hm->mu = -3.5;
+
+	printf("#%c\tn\tm\te\teu\te-eu\n", aorf);
+	for(int i=0; i<100; i++) {
+		n = 0;
+		itv = 0.1;
+
+		while(itv > 1e-5) {
+			OccCal(aorf, hm, u, &n, &m, &e, &eu);
+			if(fabs(n - n_target) < 1e-4) break;
+
+			if(n > n_target - itv) {
+				hm->mu -= itv;
+				itv *= 0.1;
+			}
+			hm->mu += itv;
+		}
+		printf("%3d\t%f\t%f\t%f\t%f\t%f\n", i, n, m, e, eu, e-eu);
+		m_cvg[i%3] = m;
+		hm->m = m;
+		hm->mu -= 1;
+
+		//if(fabs(m) < n_target/20) break;
+		if(fabs((m_cvg[0] + m_cvg[1] + m_cvg[2])/3 - m) < 1e-6) break;
+	}
+	hm->n = n;
+	hm->e = e;
+	hm->eu = eu;
 }
 
 void EPrt(char aorf, char uord, double n_target, double u) { // FM, AFM energy printor
@@ -200,7 +169,7 @@ void EPrt(char aorf, char uord, double n_target, double u) { // FM, AFM energy p
 	fp = fopen(buf, "w");
 	fprintf(fp, "path\tenergy1\tenergy2\tmu\n");
 
-	MCal(aorf, &hm, u, n_target);
+	MECal(aorf, &hm, u, n_target);
 
 	for(int i=0; i<k; i++) { // rb(0, 0) ~ Mb(pi, -pi)
 		k1 =  M_PI*i/(double)k;
@@ -239,7 +208,7 @@ void PGraphTest(char aorf, double n_target) { // FM/PM, AFM/PM transition graph 
 	clock_t t0 = clock();
 	for(double u=u_start; u<15; u+=0.1) {
 		printf("#1/u = %f\n", 1/u);
-		MCal(aorf, &hm, u, n_target);
+		MECal(aorf, &hm, u, n_target);
 		printf("\n");
 
 		if(fabs(hm.m) > n_target/20) break;
@@ -252,13 +221,15 @@ void PGraphTest(char aorf, double n_target) { // FM/PM, AFM/PM transition graph 
 void FAGraphTest(double n_target) { // FM/AFM transition graph test
 	HM hm_f, hm_a;
 
+	//printf("#1/u\tf e\ta e\tf eu\ta eu\tf e-eu\ta e-eu\n");
 	clock_t t0 = clock();
-	for(double u=5; u<10; u+=0.5) {
+	for(double u=8.5; u>6.5; u-=0.1) {
 		printf("#1/u = %f\n", 1/u);
-		ECal('F', &hm_f, u, n_target);
+		MECal('F', &hm_f, u, n_target);
 		printf("\n");
-		ECal('A', &hm_a, u, n_target);
-		printf("\n#1/u\tf e\ta e\tf eu\ta eu\tf e-eu\ta e-eu\n%f\t%f\t%f\t%f\t%f\t%f\t%f\t\n\n", 1/u, hm_f.e, hm_a.e, hm_f.eu, hm_a.eu, hm_f.e-hm_f.eu, hm_a.e-hm_a.eu);
+		MECal('A', &hm_a, u, n_target);
+		printf("\n");
+		//printf("%f\t%f\t%f\t%f\t%f\t%f\t%f\n", 1/u, hm_f.e, hm_a.e, hm_f.eu, hm_a.eu, hm_f.e-hm_f.eu, hm_a.e-hm_a.eu);
 
 		//if(hm_f.e < hm_a.e) break;
 	}
@@ -296,7 +267,7 @@ void PGraph(char aorf) { // FM/PM, AFM/PM transition graph
 		printf("#n_target = %.1f\n", n_target);
 		for(u=u_start; u<15; u+=0.1) {
 			printf("#1/u = %f\n", 1/u);
-			MCal(aorf, &hm, u, n_target);
+			MECal(aorf, &hm, u, n_target);
 			printf("\n");
 			if(fabs(hm.m) > n_target/20) break;
 		}
@@ -310,14 +281,28 @@ void PGraph(char aorf) { // FM/PM, AFM/PM transition graph
 	fclose(fp);
 }
 
-void FAGraph() { // FM/AFM transition graph
-	//HM hm_f, hm_a;
+void FAGraph(double n_target) { // FM/AFM transition graph
+	HM hm_f, hm_a;
 	FILE *fp;
 	char buf[128];
+	double u, u_start = 7.5, u_stop = 0;
 
-	//sprintf(buf, "data/FA.txt");
+	sprintf(buf, "data/FA%d.txt", (int)(5*n_target));
 	fp = fopen(buf, "w");
-	fprintf(fp, "#n/2\t1/u\tm\telapsed time(s)\n");
+	fprintf(fp, "#f n/2\ta n/2\t1/u\tf e-eu\ta e-eu\telapsed time(s)\n");
+
+	for(u=u_start;u>u_stop;u-=0.1) {
+		clock_t t0 = clock();
+		printf("#1/u = %f\n", 1/u);
+		MECal('F', &hm_f, u, n_target);
+		printf("\n");
+		MECal('A', &hm_a, u, n_target);
+		printf("\n");
+		clock_t t1 = clock();
+
+		fprintf(fp, "%f\t%f\t%f\t%f\t%f\t%f\n", hm_f.n/2, hm_a.n/2, 1/u, hm_f.e-hm_f.eu, hm_a.e-hm_a.eu, (double)(t1-t0)/CLOCKS_PER_SEC);
+		if((hm_f.e-hm_f.eu) - (hm_a.e-hm_a.eu) > 1e-3) break;
+	}
 }
 
 int main(int argc, char *argv[]) {
@@ -334,12 +319,12 @@ int main(int argc, char *argv[]) {
 	//EPrt('A', 'U', n_target, 5);
 	//PGraphTest('F', n_target);
 	//PGraphTest('A', n_target);
-	FAGraphTest(n_target);
+	//FAGraphTest(n_target);
 
-	// Data print
+	// Data
 	//PGraph('F');
 	//PGraph('A');
-	//FAGraph();
+	FAGraph(n_target);
 
 	return 0;
 }
