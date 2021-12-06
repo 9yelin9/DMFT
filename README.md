@@ -1,2 +1,2 @@
-# hubbard_single
+# hsingle
 Hubbard model with single orbital basis
