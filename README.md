@@ -1,2 +1,2 @@
-# hsingle
-Hubbard model with single orbital basis
+# mpd
+Magnetic phase diagram of Hubbard model with single orbital basis
